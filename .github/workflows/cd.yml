@@ -24,7 +24,7 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Detect Dockerfile
         id: detect
         run: echo "present=${{ hashFiles(format('{0}/Dockerfile', matrix.component)) != '' }}" >> "$GITHUB_OUTPUT"
@@ -32,7 +32,7 @@ jobs:
         run: echo "::notice::No Dockerfile yet; CD skipped."
       - if: steps.detect.outputs.present == 'true'
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ghcr.io/vibe-backend/sample-shop-${{ matrix.component }}
           tags: |
@@ -42,15 +42,15 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest,enable={{is_default_branch}}
       - if: steps.detect.outputs.present == 'true'
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
       - if: steps.detect.outputs.present == 'true'
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - if: steps.detect.outputs.present == 'true'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ${{ matrix.component }}
           push: true
