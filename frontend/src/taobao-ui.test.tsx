@@ -54,6 +54,8 @@ describe('Taobao-style layout', () => {
   it('立即購買 adds to cart and goes straight to checkout', async () => {
     tokenStore.set(await api.login({ email: 'demo@example.com', password: 'demo1234' }));
     renderAt('/products/p_007');
+    // Wait for the session to resolve (header account menu); clicking earlier would correctly send a guest to /login.
+    await screen.findByRole('button', { name: '帳戶' }, { timeout: 5000 });
     const buy = await screen.findByRole('button', { name: '立即購買' }, { timeout: 5000 });
     await waitFor(() => expect((buy as HTMLButtonElement).disabled).toBe(false), { timeout: 5000 });
     fireEvent.click(buy);
