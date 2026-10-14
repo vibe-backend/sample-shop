@@ -7,7 +7,7 @@ const json = (status: number, body: unknown, headers: Record<string, string> = {
 
 afterEach(() => vi.unstubAllGlobals());
 
-describe('real adapter createOrder (CONTRACT.md §10 @47bc45e)', () => {
+describe('real adapter createOrder (CONTRACT.md §10 @a3d4304)', () => {
   it('always sends Idempotency-Key and retries 503 TX_CONFLICT with the same key after Retry-After', async () => {
     const waits: number[] = [];
     setRetrySleep(async (ms) => void waits.push(ms));

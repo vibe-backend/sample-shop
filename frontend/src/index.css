@@ -36,6 +36,7 @@
     --color-secondary: var(--secondary);
     --color-primary-foreground: var(--primary-foreground);
     --color-primary: var(--primary);
+    --color-primary-hover: var(--primary-hover);
     --color-popover-foreground: var(--popover-foreground);
     --color-popover: var(--popover);
     --color-card-foreground: var(--card-foreground);
@@ -75,7 +76,8 @@
     --destructive: oklch(0.577 0.245 27.325);
     --border: oklch(0.922 0 0);
     --input: oklch(0.922 0 0);
-    --ring: #ff5000;
+    --ring: #cc3a00; /* focus ring 5.0:1 on white (opaque) */
+    --primary-hover: #b33300; /* opaque hover, white text 6.0:1 */
     --brand: #ff5000; /* decorative only (borders/accents), never behind text */
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
@@ -116,7 +118,8 @@
     --destructive: oklch(0.704 0.191 22.216);
     --border: oklch(1 0 0 / 10%);
     --input: oklch(1 0 0 / 15%);
-    --ring: #ff7a33;
+    --ring: #ff7a33; /* 6.5:1 on card */
+    --primary-hover: #ff9a5c; /* dark text 9.2:1 */
     --brand: #ff7a33;
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
@@ -135,7 +138,7 @@
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border outline-ring;
     }
   body {
     @apply bg-background text-foreground;

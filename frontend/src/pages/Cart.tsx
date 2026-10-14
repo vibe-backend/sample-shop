@@ -151,7 +151,7 @@ export function CheckoutPage() {
     if (!addressId) return;
     setBusy(true);
     setPlaceErr(null);
-    // CONTRACT.md §10 @47bc45e: a new key per press of 確認下單; the real adapter's automatic
+    // CONTRACT.md §10 @a3d4304: a new key per press of 確認下單; the real adapter's automatic
     // TX_CONFLICT / network retries reuse it. `busy` blocks double-clicks.
     const idemKey = crypto.randomUUID();
     try {

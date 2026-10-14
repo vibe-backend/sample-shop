@@ -101,7 +101,7 @@ export function withVariants(p: Product): Product {
 }
 
 /** Product-level price/stock mirror the SKUs: lowest price, summed stock. */
-// CONTRACT.md @dd5bf0b §9: inactive variants are omitted from `variants`; price = min over listed
+// CONTRACT.md @a3d4304 §9: inactive variants are omitted from `variants`; price = min over listed
 // variants (zero-stock ones included), stock = their sum. Options but no variants → not purchasable.
 export function syncVariantTotals(p: Product): Product {
   if (p.options?.length && !p.variants?.length) {

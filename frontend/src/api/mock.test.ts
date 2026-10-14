@@ -147,7 +147,7 @@ describe('cart and orders', () => {
     expect(p.stock).toBe(13);
   });
 
-  it('requires an Idempotency-Key (CONTRACT.md §10 @47bc45e)', async () => {
+  it('requires an Idempotency-Key (CONTRACT.md §10 @a3d4304)', async () => {
     await api.addCartItem('p_007', 1);
     await expectCode(api.createOrder(undefined as unknown as string, A), 400, 'IDEMPOTENCY_KEY_REQUIRED');
     expect((await api.getCart()).items).toHaveLength(1); // failed attempt changes nothing
@@ -157,7 +157,7 @@ describe('cart and orders', () => {
     await api.addCartItem('p_007', 1);
     const o = await api.createOrder('k1', A);
     expect((await api.createOrder('k1', A)).id).toBe(o.id);
-    await expectCode(api.createOrder('k1', { ...A, note: 'x' }), 409, 'IDEMPOTENCY_KEY_REUSED');
+    await expectCode(api.createOrder('k1', { ...A, note: 'x' } as never), 409, 'IDEMPOTENCY_KEY_REUSED');
   });
 
   it('rejects ordering when a cart line became unavailable and flags it in the cart', async () => {
@@ -216,7 +216,7 @@ describe('storage migration v1 → v2', () => {
   });
 });
 
-describe('SKU contract rules (CONTRACT.md @dd5bf0b §9)', () => {
+describe('SKU contract rules (CONTRACT.md @a3d4304 §9)', () => {
   it('treats a product with options but no active variants as not purchasable', async () => {
     const p = api.state.products.find((x) => x.id === 'p_001')!;
     p.variants = [];
@@ -239,6 +239,10 @@ describe('delivery addresses (#29)', () => {
     const xs = await api.listAddresses();
     expect(xs[0]).toMatchObject({ id: 'addr_home', is_default: true });
     expect(xs).toHaveLength(2);
+  });
+  it('checks the address before CART_EMPTY (§12 @a3d4304)', async () => {
+    await expectCode(api.createOrder('a0', {} as never), 422, 'ADDRESS_REQUIRED');
+    await expectCode(api.createOrder('a0b', A), 422, 'CART_EMPTY');
   });
   it('requires an address to order (422 ADDRESS_REQUIRED / 404 ADDRESS_NOT_FOUND)', async () => {
     await api.addCartItem('p_007', 1);
