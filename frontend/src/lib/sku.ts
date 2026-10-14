@@ -26,11 +26,10 @@ export function isValueAvailable(p: Pick<Product, 'variants'>, sel: Selection, n
   return (p.variants ?? []).some((v) => v.in_stock && matches(v, probe));
 }
 
-/** [min, max] price over in-stock SKUs (all SKUs when none are in stock). */
+/** [min, max] price over all listed SKUs, zero-stock included (CONTRACT.md @dd5bf0b §9). */
 export function priceRange(p: Pick<Product, 'price_cents' | 'variants'>): [number, number] {
-  const vs = p.variants?.length ? (p.variants.some((v) => v.in_stock) ? p.variants.filter((v) => v.in_stock) : p.variants) : null;
-  if (!vs) return [p.price_cents, p.price_cents];
-  const prices = vs.map((v) => v.price_cents);
+  if (!p.variants?.length) return [p.price_cents, p.price_cents];
+  const prices = p.variants.map((v) => v.price_cents);
   return [Math.min(...prices), Math.max(...prices)];
 }
 

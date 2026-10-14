@@ -27,7 +27,7 @@ describe('SKU selector (mock mode)', () => {
     renderAt('/products/p_003');
     await waitFor(() => expect(screen.getByRole('heading', { name: '亞麻帆布托特包' })).toBeTruthy(), { timeout: 5000 });
     const price = () => screen.getByTestId('price').textContent ?? '';
-    expect(price()).toMatch(/320\.00.*360\.00/);
+    expect(price()).toMatch(/320\.00.*380\.00/);
     // 橄欖綠 has no stock in any size.
     expect(radio('橄欖綠').disabled).toBe(true);
 

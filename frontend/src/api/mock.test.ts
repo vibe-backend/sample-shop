@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createMockApi, migrateV1 } from './mock';
-import { seedProducts } from './seed';
+import { seedProducts, syncVariantTotals } from './seed';
 import { formatPrice, lineTotal, subtotal } from './money';
 import { ApiRequestError } from './types';
 
@@ -196,6 +196,23 @@ describe('storage migration v1 → v2', () => {
     } finally {
       (globalThis as { localStorage?: unknown }).localStorage = prev;
     }
+  });
+});
+
+describe('SKU contract rules (CONTRACT.md @dd5bf0b §9)', () => {
+  it('treats a product with options but no active variants as not purchasable', async () => {
+    const p = api.state.products.find((x) => x.id === 'p_001')!;
+    p.variants = [];
+    syncVariantTotals(p);
+    expect((await api.getProduct('p_001')).in_stock).toBe(false);
+    await loginAs('demo@example.com', 'demo1234');
+    await expectCode(api.addCartItem('p_001', 1), 422, 'SKU_REQUIRED');
+  });
+  it('counts zero-stock variants toward the minimum price', () => {
+    const tote = seedProducts().find((x) => x.slug === 'linen-tote')!;
+    tote.variants![0].stock = 0;
+    tote.variants![0].in_stock = false;
+    expect(syncVariantTotals(tote).price_cents).toBe(32000);
   });
 });
 

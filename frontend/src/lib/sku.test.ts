@@ -22,7 +22,7 @@ describe('sku helpers', () => {
     expect(isValueAvailable(tote, { 顏色: '米白' }, '尺寸', '大')).toBe(true);
   });
   it('computes the in-stock price range and product totals', () => {
-    expect(priceRange(tote)).toEqual([32000, 36000]);
+    expect(priceRange(tote)).toEqual([32000, 38000]); // zero-stock 橄欖綠／大 still counts
     expect(priceRange(pen)).toEqual([45000, 45000]);
     expect(tote.stock).toBe(15);
   });

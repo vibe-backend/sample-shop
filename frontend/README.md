@@ -49,7 +49,7 @@ VITE_API_BASE_URL=https://your-backend.example
 
 The real adapter (`src/api/real.ts`) is written against the contract but has not been run against a backend yet.
 
-**Product SKUs / variants (#17) are mock-only for now — real mode 未支援 SKU.** `backend/CONTRACT.md` does not define `options`, `variants` or `sku_id` yet; the real adapter already sends `sku_id` and reads those fields, but until the backend adds them every product behaves as a single-spec product in real mode.
+**Product SKUs / variants (#17): real mode 未支援 SKU (not verified).** `backend/CONTRACT.md` on `backend/markdown-v1` @dd5bf0b (§9) now defines `options`, `variants` and `sku_id`, and the real adapter follows it, but the backend does not compile yet, so SKUs have only been exercised in mock mode.
 
 Mock data is stored in `localStorage` under `shop.mock.v2`. Data from the older `shop.mock.v1` key is migrated once on load (users, orders and staff edits kept; demo SKUs attached; cart lines for products that now need a spec are dropped) and the old key is removed.
 

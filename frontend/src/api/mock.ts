@@ -169,12 +169,12 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
   }
   /** Resolves the SKU for a cart add: required iff the product has variants. */
   function resolveSku(p: Product, skuId?: string | null): ProductVariant | null {
-    if (!p.variants?.length) {
+    if (!p.options?.length) {
       if (skuId) throw err(404, 'SKU_NOT_FOUND', '找不到此規格');
       return null;
     }
     if (!skuId) throw err(422, 'SKU_REQUIRED', '請先選擇商品規格');
-    const v = p.variants.find((x) => x.id === skuId);
+    const v = (p.variants ?? []).find((x) => x.id === skuId);
     if (!v) throw err(404, 'SKU_NOT_FOUND', '找不到此規格');
     return v;
   }
@@ -281,8 +281,8 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
     createOrder: (key) =>
       run(() => {
         const u = currentUser();
-        // Server side tolerates a missing key: branch backend/markdown-v1, backend/CONTRACT.md
-        // §2 端點一覽 #14 says `Idempotency-Key`（建議必帶）, i.e. recommended, not required.
+        // Server side tolerates a missing key: branch backend/markdown-v1 @dd5bf0b, backend/CONTRACT.md
+        // §2 端點一覽 #14 (see also §4b: retries reuse the same key) says `Idempotency-Key`（建議必帶）, i.e. recommended, not required.
         // Our client (types.ts / real.ts) always sends one.
         const prev = key ? state.idempotency[`${u.id}:${key}`] : undefined;
         if (prev) return (state.orders[u.id] ?? []).find((o) => o.id === prev)!;
@@ -338,7 +338,7 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
         requireStaff();
         validateProduct(patch);
         const p = findProduct(pid, true);
-        if (p.variants?.length) {
+        if (p.options?.length) {
           // Price/stock of a SKU product are derived from its variants; an explicit change would be lost.
           if ((patch.price_cents !== undefined && patch.price_cents !== p.price_cents) || (patch.stock !== undefined && patch.stock !== p.stock))
             throw err(422, 'VARIANT_MANAGED', '此商品設有規格，價格及庫存須按規格修改');
