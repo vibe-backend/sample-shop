@@ -2,7 +2,7 @@
 
 This draft builds on the address, payment and order-status PR stack (#64 → #65 → #68 → #69).
 It implements the outstanding buyer features in mock mode so the frontend can be reviewed before backend work.
-Issues remain open until the draft is reviewed and merged. Backend source changes are in the separate follow-up #71.
+The current scope is frontend UI only. Issues remain open until the draft is reviewed and merged. Backend source changes are in the separate follow-up #71.
 
 ## Issue coverage
 
@@ -16,7 +16,7 @@ Issues remain open until the draft is reviewed and merged. Backend source change
 | #29, #30, #34, #44 | Uses the existing address/payment/status stack; adds valid HK numbers starting with 852; removes ineffective edit-default checkbox | Production integration still depends on backend PR #62 and SDK compilation |
 | #31–#33 | Courier/pickup; free delivery threshold; coupon/code and points selection; 200-character buyer note; integer-cent totals | Backend quote/create-order extensions; policy confirmation |
 | #35–#40 | Status tabs with counts and cursor paging; cancellation reason; simulated shipment timeline/copy; receipt confirmation; review entry; reorder with skipped items; buyer-only order hiding | Backend buyer status filters, shipment and hiding APIs |
-| #41–#43 | Mock reset codes with common account-existence message, expiry and attempt limit; account dashboard/counts; name and password changes | Real email delivery and password reset contract |
+| #41–#43 | Mock reset codes with common account-existence message, expiry and attempt limit; responsive account dashboard with an initial avatar, order counts, service cards and points ledger; labeled profile/password forms | Real email delivery and password reset contract |
 | #45–#46 | Favorites retain unavailable markers; store following; 30-day browsing history grouped by date with item/all deletion | Saved browsing history is per browser; favorites/following need backend APIs |
 | #47–#49 | Per-user single-claim coupons with used/expired views; compare-at prices; automatic spend promotion; limited campaign with countdown and expiry | Campaigns and coupons are demo policies; server validation required |
 | #50 | Salted PBKDF2 verifiers; v1/v2 plaintext migration before persistence; no passwords or sessions saved | Mock storage remains a demo, not a production authentication system |

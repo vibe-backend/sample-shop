@@ -92,7 +92,7 @@ export function OrdersPage() {
   return (
     <section>
       <PageTitle>我的訂單</PageTitle>
-      <nav aria-label="訂單狀態" className="mb-4 flex flex-wrap gap-2">
+      <nav aria-label="訂單狀態" className="mb-4 flex gap-2 overflow-x-auto pb-2 sm:flex-wrap">
         {(
           [
             ['all', '全部'],
@@ -107,6 +107,7 @@ export function OrdersPage() {
           <Button
             key={s}
             size="sm"
+            className="shrink-0"
             variant={selected === s ? 'default' : 'outline'}
             aria-pressed={selected === s}
             onClick={() => setParams(s === 'all' ? {} : { status: s })}
@@ -119,7 +120,7 @@ export function OrdersPage() {
       <ErrorNote error={error} />
       {!loading && orders.length === 0 && !error ? (
         <Empty>
-          <p>還沒有訂單。</p>
+          <p>{selected === 'all' ? '還沒有訂單。' : '這個狀態暫時沒有訂單。'}</p>
           <Button asChild>
             <Link to="/">去逛逛</Link>
           </Button>
@@ -133,10 +134,13 @@ export function OrdersPage() {
                 className="group block rounded-xl focus-visible:ring-3 focus-visible:ring-ring focus-visible:outline-none"
               >
                 <Card className="py-0 transition-colors group-hover:ring-primary/60">
-                  <CardContent className="grid grid-cols-[1fr_auto] items-center gap-4 py-3.5 sm:grid-cols-[1fr_auto_60px_120px]">
-                    <div className="grid">
-                      <strong>#{o.id}</strong>
-                      <span className="text-muted-foreground">{formatDate(o.created_at)}</span>
+                  <CardContent className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-4 sm:grid-cols-[minmax(0,1fr)_auto_60px_120px]">
+                    <div className="grid min-w-0 gap-1">
+                      <strong className="break-all text-sm">#{o.id}</strong>
+                      <span className="text-xs text-muted-foreground">{formatDate(o.created_at)}</span>
+                      <span className="truncate text-sm text-muted-foreground">
+                        {o.items.map((item) => item.name).join('、')}
+                      </span>
                     </div>
                     <StatusBadge status={o.status} />
                     <span className="hidden text-muted-foreground sm:block">

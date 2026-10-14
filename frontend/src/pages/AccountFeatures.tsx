@@ -1,5 +1,19 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import {
+  ChevronRight,
+  CreditCard,
+  Heart,
+  HelpCircle,
+  History,
+  LockKeyhole,
+  MessageSquare,
+  Package,
+  Ticket,
+  Truck,
+  UserRound,
+  Wallet,
+} from 'lucide-react';
 import { api, API_MODE, formatPrice } from '../api';
 import { useAuth } from '../auth';
 import { Button } from '../components/ui/button';
@@ -12,8 +26,14 @@ import { SHOP_INFO } from '../lib/commerce';
 export function AccountExtras() {
   const { me, refreshMe, logout } = useAuth();
   const nav = useNavigate();
-  const [counts] = useAsync(() => (API_MODE === 'mock' ? api.orderCounts() : Promise.resolve(null)), []);
-  const [wallet] = useAsync(() => (API_MODE === 'mock' ? api.wallet() : Promise.resolve(null)), []);
+  const [counts, countsError, countsLoading] = useAsync(
+    () => (API_MODE === 'mock' ? api.orderCounts() : Promise.resolve(null)),
+    [],
+  );
+  const [wallet, walletError, walletLoading] = useAsync(
+    () => (API_MODE === 'mock' ? api.wallet() : Promise.resolve(null)),
+    [],
+  );
   const [name, setName] = useState(me?.display_name ?? '');
   const [oldPassword, setOld] = useState('');
   const [password, setPassword] = useState('');
@@ -41,70 +61,174 @@ export function AccountExtras() {
     }
   }
   return (
-    <div className="grid gap-4">
-      <div className="flex flex-wrap gap-2 text-sm">
-        {counts &&
-          Object.entries({ pending: '待付款', paid: '待發貨', shipped: '待收貨', needs_review: '待評價' }).map(
-            ([s, title]) => (
-              <Link key={s} to={`/orders?status=${s}`} className="rounded-lg bg-muted p-3">
-                {title} {counts[s as keyof typeof counts]}
-              </Link>
-            ),
+    <div className="grid gap-5">
+      {API_MODE === 'mock' && (
+        <section className="rounded-xl border bg-card p-5" aria-labelledby="account-orders-title">
+          <div className="mb-4 flex items-center justify-between gap-2">
+            <h2 id="account-orders-title" className="font-semibold">
+              訂單進度
+            </h2>
+            <Link to="/orders" className="flex items-center gap-1 text-sm text-muted-foreground hover:text-primary">
+              全部訂單
+              <ChevronRight className="size-4" aria-hidden="true" />
+            </Link>
+          </div>
+          <ErrorNote error={countsError} />
+          {countsLoading ? (
+            <Spinner label="載入訂單進度…" />
+          ) : (
+            counts && (
+              <nav className="grid grid-cols-4 gap-1" aria-label="訂單進度">
+                {[
+                  { status: 'pending', title: '待付款', Icon: CreditCard },
+                  { status: 'paid', title: '待發貨', Icon: Package },
+                  { status: 'shipped', title: '待收貨', Icon: Truck },
+                  { status: 'needs_review', title: '待評價', Icon: MessageSquare },
+                ].map(({ status, title, Icon }) => (
+                  <Link
+                    key={status}
+                    to={`/orders?status=${status}`}
+                    className="flex flex-col items-center gap-2 rounded-lg px-1 py-3 text-center hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
+                  >
+                    <Icon className="size-5 text-primary" aria-hidden="true" />
+                    <span className="text-xl font-semibold tabular-nums">{counts[status as keyof typeof counts]}</span>
+                    <span className="text-xs text-muted-foreground sm:text-sm">{title}</span>
+                  </Link>
+                ))}
+              </nav>
+            )
           )}
-      </div>
-      <nav className="flex flex-wrap gap-3 text-sm">
-        <Link to="/account/favorites">收藏商品</Link>
-        <Link to="/account/coupons">我的優惠券</Link>
-        <Link to="/account/history">足跡</Link>
-        <Link to="/help">幫助中心</Link>
+        </section>
+      )}
+      <nav className="grid grid-cols-2 gap-3 sm:grid-cols-4" aria-label="會員服務">
+        {[
+          { to: '/account/favorites', title: '收藏商品', subtitle: '留住喜歡的好物', Icon: Heart },
+          { to: '/account/coupons', title: '我的優惠券', subtitle: '查看可用優惠', Icon: Ticket },
+          { to: '/account/history', title: '足跡', subtitle: '繼續最近的探索', Icon: History },
+          { to: '/help', title: '幫助中心', subtitle: '購物問題與支援', Icon: HelpCircle },
+        ].map(({ to, title, subtitle, Icon }) => (
+          <Link
+            key={to}
+            to={to}
+            className="rounded-xl border bg-card p-4 transition-colors hover:border-primary focus-visible:outline-2 focus-visible:outline-ring"
+          >
+            <Icon className="mb-3 size-5 text-primary" aria-hidden="true" />
+            <p className="text-sm font-semibold">{title}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{subtitle}</p>
+          </Link>
+        ))}
       </nav>
       {API_MODE === 'mock' && (
         <>
-          <section className="rounded-xl border p-3">
-            <h2 className="font-bold">會員積分：{wallet?.balance ?? 0}</h2>
-            <p className="text-xs">完成訂單每 HK$1 得 1 分；1 分抵 HK$1，最多抵商品淨額 10%。</p>
-            <ul className="mt-2 text-sm">
-              {wallet?.entries.map((it, i) => (
-                <li key={i}>
-                  {new Date(it.at).toLocaleDateString('zh-Hant')} · {it.reason} · {it.amount > 0 ? '+' : ''}
-                  {it.amount}
-                </li>
-              ))}
-            </ul>
+          <section className="rounded-xl border bg-card p-5" aria-labelledby="account-points-title">
+            <h2 id="account-points-title" className="flex items-center gap-2 font-semibold">
+              <Wallet className="size-5 text-primary" aria-hidden="true" />
+              會員積分
+            </h2>
+            <ErrorNote error={walletError} />
+            {walletLoading ? (
+              <Spinner label="載入會員積分…" />
+            ) : (
+              wallet && (
+                <>
+                  <p className="my-3 text-3xl font-semibold tabular-nums">
+                    {wallet.balance}
+                    <span className="ml-2 text-sm font-normal text-muted-foreground">分</span>
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    完成訂單每 HK$1 得 1 分；1 分抵 HK$1，最多抵商品淨額 10%。
+                  </p>
+                  {wallet.entries.length ? (
+                    <ul className="mt-4 max-h-48 divide-y overflow-y-auto text-sm" aria-label="積分紀錄">
+                      {wallet.entries.map((it, i) => (
+                        <li key={i} className="flex items-start justify-between gap-3 py-3">
+                          <div className="min-w-0">
+                            <p className="break-words">{it.reason}</p>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {new Date(it.at).toLocaleDateString('zh-Hant')}
+                            </p>
+                          </div>
+                          <span className="shrink-0 font-medium tabular-nums">
+                            {it.amount > 0 ? '+' : ''}
+                            {it.amount}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-4 rounded-lg bg-muted p-3 text-sm text-muted-foreground">
+                      還沒有積分紀錄，完成訂單後即可累積積分。
+                    </p>
+                  )}
+                </>
+              )
+            )}
           </section>
-          <form onSubmit={(e) => update(e, false)} className="grid gap-2">
-            <label htmlFor="profile-name">顯示名稱</label>
-            <Input id="profile-name" value={name} maxLength={80} required onChange={(e) => setName(e.target.value)} />
-            <Button disabled={busy}>儲存個人資料</Button>
-          </form>
-          <form onSubmit={(e) => update(e, true)} className="grid gap-2">
-            <h2 className="font-bold">修改密碼</h2>
-            <Input
-              aria-label="舊密碼"
-              type="password"
-              autoComplete="current-password"
-              required
-              value={oldPassword}
-              onChange={(e) => setOld(e.target.value)}
-            />
-            <Input
-              aria-label="新密碼"
-              type="password"
-              autoComplete="new-password"
-              required
-              minLength={8}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-            <Button disabled={busy}>修改密碼並重新登入</Button>
-          </form>
+          <div className="grid items-start gap-4 sm:grid-cols-2">
+            <form onSubmit={(e) => update(e, false)} className="grid gap-3 rounded-xl border bg-card p-5">
+              <h2 className="mb-1 flex items-center gap-2 font-semibold">
+                <UserRound className="size-5 text-primary" aria-hidden="true" />
+                個人資料
+              </h2>
+              <label htmlFor="profile-name" className="text-sm">
+                顯示名稱
+              </label>
+              <Input
+                id="profile-name"
+                autoComplete="nickname"
+                value={name}
+                maxLength={80}
+                required
+                onChange={(e) => setName(e.target.value)}
+              />
+              <Button disabled={busy} className="mt-2">
+                儲存個人資料
+              </Button>
+            </form>
+            <form onSubmit={(e) => update(e, true)} className="grid gap-3 rounded-xl border bg-card p-5">
+              <h2 className="mb-1 flex items-center gap-2 font-semibold">
+                <LockKeyhole className="size-5 text-primary" aria-hidden="true" />
+                修改密碼
+              </h2>
+              <label htmlFor="profile-old-password" className="text-sm">
+                舊密碼
+              </label>
+              <Input
+                id="profile-old-password"
+                type="password"
+                autoComplete="current-password"
+                required
+                value={oldPassword}
+                onChange={(e) => setOld(e.target.value)}
+              />
+              <label htmlFor="profile-new-password" className="text-sm">
+                新密碼（至少 8 個字元）
+              </label>
+              <Input
+                id="profile-new-password"
+                aria-label="新密碼"
+                type="password"
+                autoComplete="new-password"
+                required
+                minLength={8}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+              <Button disabled={busy} className="mt-2">
+                修改密碼並重新登入
+              </Button>
+            </form>
+          </div>
         </>
       )}
       <ErrorNote error={error} />
-      <p role="status">{message}</p>
+      <p role="status" className="text-sm text-success">
+        {message}
+      </p>
     </div>
   );
 }
+
 export function FavoritesPage() {
   const [items, error, loading, reload] = useAsync(() => api.listFavorites(), []);
   const [opError, setOpError] = useState<unknown>(null);

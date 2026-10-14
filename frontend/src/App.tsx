@@ -14,7 +14,20 @@ import { AddressBookPage } from './pages/Addresses';
 import { StaffOrdersPage } from './pages/StaffOrders';
 import { useEffect, useState, useRef, type FormEvent } from 'react';
 import { Link, NavLink, Route, Routes, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { House, ListOrdered, LogOut, Menu, Monitor, Moon, Search, ShoppingCart, Sun, User } from 'lucide-react';
+import {
+  ChevronRight,
+  House,
+  ListOrdered,
+  LogOut,
+  MapPin,
+  Menu,
+  Monitor,
+  Moon,
+  Search,
+  ShoppingCart,
+  Sun,
+  User,
+} from 'lucide-react';
 import { API_MODE, resetMockData } from './api';
 import { useAuth } from './auth';
 import { RequireAuth } from './components/ui-helpers';
@@ -153,38 +166,58 @@ function AccountPage() {
   const { me, isStaff, logout } = useAuth();
   const nav = useNavigate();
   return (
-    <section className="mx-auto grid max-w-md gap-3">
-      <div className="rounded-xl bg-gradient-to-r from-[#c43c00] to-[#9e2f00] p-5 text-white">
-        <div className="text-lg font-semibold">{me?.display_name}</div>
-        <div className="text-sm">{me?.email}</div>
+    <section className="mx-auto grid max-w-5xl gap-5">
+      <div className="flex items-center gap-4 rounded-2xl bg-gradient-to-r from-[#c43c00] to-[#9e2f00] p-5 text-white sm:p-7">
+        <div
+          role="img"
+          aria-label={`${me?.display_name ?? '會員'}的頭像`}
+          className="flex size-16 shrink-0 items-center justify-center rounded-full border-2 border-white/50 bg-white/15 text-2xl font-semibold sm:size-20"
+        >
+          {Array.from(me?.display_name?.trim() || '會員')[0]}
+        </div>
+        <div className="min-w-0">
+          <p className="mb-1 text-xs text-white/80">個人中心</p>
+          <h1 className="break-words text-2xl font-semibold">{me?.display_name}</h1>
+          <p className="mt-1 break-all text-sm text-white/90">{me?.email}</p>
+        </div>
       </div>
-      <nav className="grid divide-y rounded-xl bg-card" aria-label="帳戶">
-        <Link to="/orders" className="px-4 py-3">
-          我的訂單
-        </Link>
-        <Link to="/account/addresses" className="px-4 py-3">
-          收貨地址
-        </Link>
-        {isStaff && (
-          <Link to="/staff/products" className="px-4 py-3">
-            商品管理
+      <nav className="flex flex-wrap items-center gap-2 rounded-xl border bg-card p-2" aria-label="帳戶">
+        <Button asChild variant="ghost">
+          <Link to="/orders">
+            <ListOrdered aria-hidden="true" />
+            我的訂單
+            <ChevronRight aria-hidden="true" />
           </Link>
-        )}
-        {isStaff && (
-          <Link to="/staff/orders" className="px-4 py-3">
-            訂單管理
+        </Button>
+        <Button asChild variant="ghost">
+          <Link to="/account/addresses">
+            <MapPin aria-hidden="true" />
+            收貨地址
+            <ChevronRight aria-hidden="true" />
           </Link>
+        </Button>
+        {isStaff && (
+          <>
+            <Button asChild variant="ghost">
+              <Link to="/staff/products">商品管理</Link>
+            </Button>
+            <Button asChild variant="ghost">
+              <Link to="/staff/orders">訂單管理</Link>
+            </Button>
+          </>
         )}
-        <button
+        <Button
           type="button"
-          className="px-4 py-3 text-left text-destructive"
+          variant="ghost"
+          className="ml-auto text-destructive"
           onClick={() => {
             logout();
             nav('/');
           }}
         >
+          <LogOut aria-hidden="true" />
           登出
-        </button>
+        </Button>
       </nav>
       <AccountExtras />
     </section>
