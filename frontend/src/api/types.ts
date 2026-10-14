@@ -162,12 +162,15 @@ export interface ShopApi {
   register(r: RegisterInput): Promise<AuthToken>;
   me(): Promise<Me>;
   listProducts(q?: ProductQuery): Promise<Page<Product>>;
+  /** Staff only; includes inactive products. GET /catalog/v1/{slug}/staff/products */
+  listStaffProducts(q?: ProductQuery): Promise<Page<Product>>;
   getProduct(id: string): Promise<Product>;
   getCart(): Promise<Cart>;
   addCartItem(productId: string, quantity: number, skuId?: string | null): Promise<Cart>;
   updateCartItem(itemId: string, quantity: number): Promise<Cart>;
   removeCartItem(itemId: string): Promise<Cart>;
-  createOrder(idempotencyKey: string): Promise<Order>;
+  /** Idempotency-Key is recommended, not required. */
+  createOrder(idempotencyKey?: string): Promise<Order>;
   listOrders(cursor?: string): Promise<Page<Order>>;
   getOrder(id: string): Promise<Order>;
   createProduct(p: ProductInput): Promise<Product>;

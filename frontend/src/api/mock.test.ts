@@ -144,4 +144,14 @@ describe('cart and orders', () => {
     expect(p.variants!.find((v) => v.id === 'p_003_sku2')!.stock).toBe(2);
     expect(p.stock).toBe(13);
   });
+
+  it('places an order without an Idempotency-Key', async () => {
+    await api.addCartItem('p_007', 1);
+    const o = await api.createOrder();
+    expect(o.total_cents).toBe(42000);
+  });
+
+  it('restricts the staff product list to staff', async () => {
+    await expectCode(api.listStaffProducts(), 403, 'FORBIDDEN');
+  });
 });

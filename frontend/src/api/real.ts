@@ -53,24 +53,28 @@ export function createRealApi(baseUrl: string, slug: string): ShopApi {
   const cat = `/catalog/v1/${encodeURIComponent(slug)}/products`;
 
   return {
-    login: (c) => req<AuthToken>('POST', '/users/v1/login', c),
-    register: (r) => req<AuthToken>('POST', '/users/v1/register', r),
+    login: (c) => req<AuthToken>('POST', `/users/v1/${encodeURIComponent(slug)}/login`, c),
+    register: (r) => req<AuthToken>('POST', `/users/v1/${encodeURIComponent(slug)}/register`, r),
     me: () => req<Me>('GET', '/users/v1/me'),
     listProducts: (q = {}) => {
       const { sort, ...rest } = q;
       return req<Page<Product>>('GET', cat + qs({ ...rest, ...sortParam(sort) }));
     },
+    listStaffProducts: (q = {}) => {
+      const { sort, ...rest } = q;
+      return req<Page<Product>>('GET', `/catalog/v1/${encodeURIComponent(slug)}/staff/products` + qs({ ...rest, ...sortParam(sort) }));
+    },
     getProduct: (id) => req<Product>('GET', `${cat}/${encodeURIComponent(id)}`),
     getCart: () => req<Cart>('GET', '/shop/v1/cart-items'),
     addCartItem: (product_id, quantity, sku_id) =>
       req<Cart>('POST', '/shop/v1/cart-items', sku_id ? { product_id, sku_id, quantity } : { product_id, quantity }),
-    updateCartItem: (id, quantity) => req<Cart>('PATCH', `/shop/v1/cart-items/${encodeURIComponent(id)}`, { quantity }),
+    updateCartItem: (id, quantity) => req<Cart>('PUT', `/shop/v1/cart-items/${encodeURIComponent(id)}`, { quantity }),
     removeCartItem: (id) => req<Cart>('DELETE', `/shop/v1/cart-items/${encodeURIComponent(id)}`),
-    createOrder: (key) => req<Order>('POST', '/shop/v1/orders', {}, { 'Idempotency-Key': key }),
+    createOrder: (key) => req<Order>('POST', '/shop/v1/orders', {}, key ? { 'Idempotency-Key': key } : {}),
     listOrders: (cursor) => req<Page<Order>>('GET', '/shop/v1/orders' + qs({ cursor })),
     getOrder: (id) => req<Order>('GET', `/shop/v1/orders/${encodeURIComponent(id)}`),
     createProduct: (p: ProductInput) => req<Product>('POST', cat, p),
-    updateProduct: (id, p) => req<Product>('PATCH', `${cat}/${encodeURIComponent(id)}`, p),
+    updateProduct: (id, p) => req<Product>('PUT', `${cat}/${encodeURIComponent(id)}`, p),
     deleteProduct: (id) => req<void>('DELETE', `${cat}/${encodeURIComponent(id)}`),
   };
 }

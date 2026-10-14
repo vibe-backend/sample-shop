@@ -192,6 +192,14 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
         const u = currentUser();
         return { id: u.id, email: u.email, display_name: u.display_name, roles: u.roles };
       }),
+    listStaffProducts: (q: ProductQuery = {}) => {
+      try {
+        requireStaff();
+      } catch (e) {
+        return Promise.reject(e);
+      }
+      return api.listProducts(q);
+    },
     listProducts: (q: ProductQuery = {}) =>
       run(() => {
         const staff = isStaff();
@@ -250,8 +258,8 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
     createOrder: (key) =>
       run(() => {
         const u = currentUser();
-        if (!key) throw err(400, 'IDEMPOTENCY_KEY_REQUIRED', '缺少 Idempotency-Key');
-        const prev = state.idempotency[`${u.id}:${key}`];
+        // Idempotency-Key is recommended, not required (contract §1 #14).
+        const prev = key ? state.idempotency[`${u.id}:${key}`] : undefined;
         if (prev) return (state.orders[u.id] ?? []).find((o) => o.id === prev)!;
         const cart = cartOf(u.id);
         if (!cart.items.length) throw err(422, 'CART_EMPTY', '購物車是空的');
@@ -280,7 +288,7 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
           created_at: new Date(now()).toISOString(),
         };
         (state.orders[u.id] ??= []).unshift(order);
-        state.idempotency[`${u.id}:${key}`] = order.id;
+        if (key) state.idempotency[`${u.id}:${key}`] = order.id;
         state.carts[u.id] = [];
         return order;
       }),

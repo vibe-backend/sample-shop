@@ -32,6 +32,7 @@ export function StaffProductsPage() {
   const [error, setError] = useState<unknown>(null);
   const [tick, setTick] = useState(0);
   const [pending, setPending] = useState<Product | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -42,7 +43,7 @@ export function StaffProductsPage() {
         const all: Product[] = [];
         let cursor: string | undefined;
         do {
-          const p = await api.listProducts({ cursor, limit: 50, sort: 'created_at_desc' });
+          const p = await api.listStaffProducts({ cursor, limit: 50, sort: 'created_at_desc' });
           all.push(...p.items);
           cursor = p.next_cursor ?? undefined;
         } while (cursor);
@@ -59,12 +60,15 @@ export function StaffProductsPage() {
   }, [tick]);
 
   async function remove(p: Product) {
+    setDeleting(p.id);
     try {
       await api.deleteProduct(p.id);
       toast.success(`已刪除「${p.name}」`);
       setTick((t) => t + 1);
     } catch (e) {
-      setError(e);
+      toast.error(`刪除「${p.name}」失敗：${e instanceof Error ? e.message : '未知錯誤'}`);
+    } finally {
+      setDeleting(null);
     }
   }
 
@@ -116,8 +120,8 @@ export function StaffProductsPage() {
                     <Button variant="link" size="sm" asChild>
                       <Link to={`/staff/products/${p.id}`}>編輯</Link>
                     </Button>
-                    <Button variant="link" size="sm" className="text-destructive" onClick={() => setPending(p)}>
-                      刪除
+                    <Button variant="link" size="sm" className="text-destructive" disabled={deleting === p.id} onClick={() => setPending(p)}>
+                      {deleting === p.id ? '刪除中…' : '刪除'}
                     </Button>
                   </TableCell>
                 </TableRow>

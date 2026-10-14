@@ -44,4 +44,10 @@ describe('smoke render (mock mode)', () => {
     expect(document.documentElement.classList.contains('dark')).toBe(true);
     localStorage.removeItem('shop.theme');
   });
+
+  it('does not persist the default theme on first render', () => {
+    localStorage.removeItem('shop.theme');
+    renderAt('/login');
+    expect(localStorage.getItem('shop.theme')).toBeNull();
+  });
 });
