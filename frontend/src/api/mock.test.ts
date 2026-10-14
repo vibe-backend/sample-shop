@@ -148,7 +148,7 @@ describe('cart and orders', () => {
 
   it('places an order without an Idempotency-Key', async () => {
     await api.addCartItem('p_007', 1);
-    const o = await api.createOrder();
+    const o = await api.createOrder(undefined as unknown as string); // server-side tolerance only
     expect(o.total_cents).toBe(42000);
   });
 

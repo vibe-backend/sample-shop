@@ -281,7 +281,9 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
     createOrder: (key) =>
       run(() => {
         const u = currentUser();
-        // Idempotency-Key is recommended, not required (contract §1 #14).
+        // Server side tolerates a missing key: branch backend/markdown-v1, backend/CONTRACT.md
+        // §2 端點一覽 #14 says `Idempotency-Key`（建議必帶）, i.e. recommended, not required.
+        // Our client (types.ts / real.ts) always sends one.
         const prev = key ? state.idempotency[`${u.id}:${key}`] : undefined;
         if (prev) return (state.orders[u.id] ?? []).find((o) => o.id === prev)!;
         const cart = cartOf(u.id);

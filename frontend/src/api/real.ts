@@ -70,7 +70,8 @@ export function createRealApi(baseUrl: string, slug: string): ShopApi {
       req<Cart>('POST', '/shop/v1/cart-items', sku_id ? { product_id, sku_id, quantity } : { product_id, quantity }),
     updateCartItem: (id, quantity) => req<Cart>('PUT', `/shop/v1/cart-items/${encodeURIComponent(id)}`, { quantity }),
     removeCartItem: (id) => req<Cart>('DELETE', `/shop/v1/cart-items/${encodeURIComponent(id)}`),
-    createOrder: (key) => req<Order>('POST', '/shop/v1/orders', {}, key ? { 'Idempotency-Key': key } : {}),
+    // The client always sends Idempotency-Key (generated per checkout attempt).
+    createOrder: (key) => req<Order>('POST', '/shop/v1/orders', {}, { 'Idempotency-Key': key }),
     listOrders: (cursor) => req<Page<Order>>('GET', '/shop/v1/orders' + qs({ cursor })),
     getOrder: (id) => req<Order>('GET', `/shop/v1/orders/${encodeURIComponent(id)}`),
     createProduct: (p: ProductInput) => req<Product>('POST', cat, p),

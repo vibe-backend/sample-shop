@@ -218,12 +218,12 @@ export function StaffEditPage() {
             <Field id="slug" label="Slug">
               <Input id="slug" required pattern="[a-z0-9-]+" title="小寫英文、數字及連字號" className="h-10" value={f.slug} onChange={(e) => setF({ ...f, slug: e.target.value })} />
             </Field>
-            {skuCount > 0 && <p className="text-sm text-muted-foreground sm:col-span-2">此商品設有 {skuCount} 個規格，價格（最低規格價）及庫存（規格總和）由規格決定，不可在此修改。</p>}
-            <Field id="price" label="價格（HK$）">
-              <Input id="price" type="number" min="0" step="0.01" required disabled={skuCount > 0} className="h-10" value={price} onChange={(e) => setPrice(e.target.value)} />
+            {skuCount > 0 && <p className="text-sm text-muted-foreground sm:col-span-2">此商品設有 {skuCount} 個規格，價格及庫存由規格計算（最低規格價、規格庫存總和），不可在此修改。</p>}
+            <Field id="price" label={skuCount > 0 ? '價格（HK$，由規格計算）' : '價格（HK$）'}>
+              <Input id="price" type="number" min="0" step="0.01" required readOnly={skuCount > 0} aria-readonly={skuCount > 0} className="h-10 read-only:bg-muted" value={price} onChange={(e) => setPrice(e.target.value)} />
             </Field>
-            <Field id="stock" label="庫存">
-              <Input id="stock" type="number" min="0" step="1" required disabled={skuCount > 0} className="h-10" value={f.stock} onChange={(e) => setF({ ...f, stock: Number(e.target.value) })} />
+            <Field id="stock" label={skuCount > 0 ? '庫存（由規格計算）' : '庫存'}>
+              <Input id="stock" type="number" min="0" step="1" required readOnly={skuCount > 0} aria-readonly={skuCount > 0} className="h-10 read-only:bg-muted" value={f.stock} onChange={(e) => setF({ ...f, stock: Number(e.target.value) })} />
             </Field>
             <Field id="category" label="分類">
               <Select value={f.category} onValueChange={(v) => setF({ ...f, category: v })}>

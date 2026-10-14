@@ -169,8 +169,8 @@ export interface ShopApi {
   addCartItem(productId: string, quantity: number, skuId?: string | null): Promise<Cart>;
   updateCartItem(itemId: string, quantity: number): Promise<Cart>;
   removeCartItem(itemId: string): Promise<Cart>;
-  /** Idempotency-Key is recommended, not required. */
-  createOrder(idempotencyKey?: string): Promise<Order>;
+  /** The client always generates and sends an Idempotency-Key. */
+  createOrder(idempotencyKey: string): Promise<Order>;
   listOrders(cursor?: string): Promise<Page<Order>>;
   getOrder(id: string): Promise<Order>;
   createProduct(p: ProductInput): Promise<Product>;
