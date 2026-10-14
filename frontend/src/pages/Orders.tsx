@@ -179,7 +179,7 @@ export function OrderDetailPage() {
             <ol className="grid gap-1 text-sm">
               {[...o.status_history].reverse().map((h, i) => (
                 <li key={i} className="flex gap-3">
-                  <time className="w-40 shrink-0 text-muted-foreground tabular-nums" dateTime={h.at}>
+                  <time className="shrink-0 whitespace-nowrap text-muted-foreground tabular-nums sm:w-48" dateTime={h.at}>
                     {formatDate(h.at)}
                   </time>
                   <span>{STATUS_LABEL[h.status]}</span>
