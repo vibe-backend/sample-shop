@@ -72,7 +72,7 @@ function HeaderSearch({ className }: { className?: string }) {
     nav(s ? `/?${s}` : '/');
   }
   return (
-    <form role="search" onSubmit={submit} className={cn('flex h-10 items-stretch rounded-full border-2 border-brand bg-card focus-within:ring-3 focus-within:ring-ring/50', className)}>
+    <form role="search" onSubmit={submit} className={cn('flex h-10 items-stretch rounded-full border-2 border-brand bg-card focus-within:ring-3 focus-within:ring-ring', className)}>
       <Search className="my-auto ml-3 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
       <Input type="search" placeholder="搜尋商品…" aria-label="搜尋商品" className="h-full flex-1 border-0 bg-transparent shadow-none focus-visible:ring-0 dark:bg-transparent" value={draft} onChange={(e) => setDraft(e.target.value)} />
       <Button type="submit" className="m-0.5 h-auto rounded-full px-5 sm:px-7">

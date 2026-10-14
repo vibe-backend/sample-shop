@@ -129,7 +129,7 @@ export function Price({ p, className }: { p: Product; className?: string }) {
 
 export function ProductCard({ p }: { p: Product }) {
   return (
-    <Link to={`/products/${p.id}`} className="group block h-full overflow-hidden rounded-lg bg-card ring-1 ring-transparent transition hover:ring-primary focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none">
+    <Link to={`/products/${p.id}`} className="group block h-full overflow-hidden rounded-lg bg-card ring-1 ring-transparent transition hover:ring-primary focus-visible:ring-3 focus-visible:ring-ring focus-visible:outline-none">
       <div className="aspect-square bg-muted">
         <img src={p.image_urls[0]} alt="" loading="lazy" className="size-full object-cover" />
       </div>

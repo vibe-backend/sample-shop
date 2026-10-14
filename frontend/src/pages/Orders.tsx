@@ -66,7 +66,7 @@ export function OrdersPage() {
         <ul className="grid gap-2.5">
           {orders.map((o) => (
             <li key={o.id}>
-              <Link to={`/orders/${o.id}`} className="group block rounded-xl focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none">
+              <Link to={`/orders/${o.id}`} className="group block rounded-xl focus-visible:ring-3 focus-visible:ring-ring focus-visible:outline-none">
                 <Card className="py-0 transition-colors group-hover:ring-primary/60">
                   <CardContent className="grid grid-cols-[1fr_auto] items-center gap-4 py-3.5 sm:grid-cols-[1fr_auto_60px_120px]">
                     <div className="grid">
