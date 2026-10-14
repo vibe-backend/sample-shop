@@ -1,6 +1,6 @@
-# Sample Shop 後端 API 契約（草案 v1）
+# Sample Shop 後端 API 契約（草案 v2）
 
-> 狀態：草案，等前端與 Jack 確認。後端以 vibe-backend SDK（未發佈，依 spec v1.7；v1.8 草稿只在相容處參考）實作。
+> 狀態：草案，增加 #61／#66，需 SDK 編譯及部署驗收。後端以 vibe-backend SDK（未發佈，依 spec v1.7；v1.8 草稿只在相容處參考）實作。
 > 標記 **〔缺口〕** 的項目，表示目前 SDK／spec 無法表達或尚未實作，前端應先以替代方案或 mock 處理；已連結對應的 SDK issue。
 
 ## 1. 通用約定
@@ -12,7 +12,7 @@
 | 驗證 | `Authorization: Bearer <access_token>`（JWT，ES256，效期最長 1 小時） |
 | 格式 | JSON，`Content-Type: application/json`；未宣告欄位一律 422 |
 | 時間 | ISO 8601 UTC，例如 `2026-10-14T10:00:00Z` |
-| 金額 | 整數 `*_cents`，搭配 `currency`（預設 `TWD`） |
+| 金額 | 整數 `*_cents`，搭配 `currency`（預設 `HKD`） |
 | 數量 | `quantity` 為 1–99 的整數 |
 | 錯誤格式 | `{ "error": { "code": "OUT_OF_STOCK", "message": "…", "request_id": "…" } }` |
 | 401 | 一律帶 `WWW-Authenticate`；不區分帳號不存在或密碼錯誤 |
@@ -42,13 +42,17 @@
 | 17 | `GET /shop/v1/addresses` | JWT（本人） | — | 200 `Address[]`（預設排最前，不分頁） | 401 |
 | 18 | `POST /shop/v1/addresses` | JWT（本人） | body `AddressInput` | 201 `Address` + `Location` | 422 `VALIDATION_FAILED`、422 `ADDRESS_LIMIT` |
 | 19 | `POST /shop/v1/orders/{id}/payments` | JWT（本人） | header `Idempotency-Key`（**必填**，§10）；body `PaymentInput` | 200 `Order`（`status: 'paid'`、`payment_method`、`paid_at`） | 400 `IDEMPOTENCY_KEY_REQUIRED`、402 `PAYMENT_DECLINED`、404 `NOT_FOUND`、409 `ORDER_NOT_PAYABLE`、409 `IDEMPOTENCY_KEY_REUSED`、422 `VALIDATION_FAILED`、504、503（§13） |
-| 20 | `POST /shop/v1/orders/{id}/cancel` | JWT（本人） | body `{}`；**不需** `Idempotency-Key`（§10） | 200 `Order`（`status: 'cancelled'`；回補庫存，已付款則模擬退款，§14） | 404 `NOT_FOUND`（不存在或非本人）、409 `INVALID_TRANSITION`、504、503 |
+| 20 | `POST /shop/v1/orders/{id}/cancel` | JWT（本人） | body `{ reason?: string }`；**不需** `Idempotency-Key`（§10） | 200 `Order`（`status: 'cancelled'`；回補庫存，已付款則模擬退款，§14） | 404 `NOT_FOUND`（不存在或非本人）、409 `INVALID_TRANSITION`、504、503 |
 | 21 | `POST /shop/v1/orders/{id}/confirm-delivery` | JWT（本人） | body `{}`；**不需** `Idempotency-Key` | 200 `Order`（`status: 'delivered'`） | 404 `NOT_FOUND`、409 `INVALID_TRANSITION`、504、503 |
 | 22 | `GET /shop/v1/staff/orders` | JWT，`roles: [staff]` | query `status`(`OrderStatus`), `cursor`, `limit`(1–100) | 200 `Page<StaffOrder>`（所有使用者，新到舊） | 403 `FORBIDDEN`、422 `VALIDATION_FAILED` |
 | 23 | `PUT /shop/v1/staff/orders/{id}/status` | JWT，`roles: [staff]` | body `{ status: 'shipped' \| 'cancelled' }`；**不需** `Idempotency-Key` | 200 `StaffOrder` | 403 `FORBIDDEN`、404 `NOT_FOUND`、409 `INVALID_TRANSITION`、422 `VALIDATION_FAILED`、504、503 |
 | 24 | `PUT /shop/v1/addresses/{id}` | JWT（本人） | body `AddressInput`（完整取代；`is_default` 忽略） | 200 `Address` | 404 `ADDRESS_NOT_FOUND`、422 `VALIDATION_FAILED` |
 | 25 | `DELETE /shop/v1/addresses/{id}` | JWT（本人） | — | 204（軟刪除；刪除預設時最新的剩餘地址遞補） | 404 `ADDRESS_NOT_FOUND` |
 | 26 | `POST /shop/v1/addresses/{id}/default` | JWT（本人） | body `{}` | 200 `Address`（`is_default: true`；同一交易清除舊預設） | 404 `ADDRESS_NOT_FOUND` |
+| 27 | `GET /catalog/v1/{slug}/staff/products/{id}/variants` | JWT staff | path product id | 200 `ProductVariant[]`（含 inactive） | 403、404 |
+| 28 | `POST /catalog/v1/{slug}/products/{id}/variants` | JWT staff | `VariantInput` | 201 SKU + ETag | 403、404、409 SKU_EXISTS、422 |
+| 29 | `PUT /catalog/v1/{slug}/products/{id}/variants/{sku_id}` | JWT staff | If-Match + 部分 `VariantInput` | 200 SKU + ETag | 403、404 SKU_NOT_FOUND、409 SKU_EXISTS、412、428、422 |
+| 30 | `GET /catalog/v1/{slug}/staff/products/{id}` | JWT staff | product id | 200 Product + ETag（含 inactive） | 403、404 |
 
 ## 3. 資料型別
 
@@ -60,6 +64,7 @@ type Me = { id: string; email: string; display_name: string; roles: string[] };
 type SkuOptions = Record<string, string>;            // 規格名稱 → 值，例如 { 顏色: '黑色', 尺寸: '大' }
 type ProductOption = { name: string; values: string[] };
 type ProductVariant = {
+  active: boolean; version: number; reserved_stock: number;
   id: string;                 // sku_id
   options: SkuOptions;
   price_cents: number;
@@ -112,7 +117,7 @@ type CreateOrderInput = { address_id: string };
 type PaymentMethod = 'mock_card' | 'mock_alipay';
 type PaymentInput = { method: PaymentMethod; simulate: 'success' | 'failure' };
 type OrderStatusEvent = { status: OrderStatus; at: string }; // §14，ISO 8601 UTC
-type Order = { id: string; status: OrderStatus; payment_method?: PaymentMethod | null; paid_at?: string | null; status_history?: OrderStatusEvent[]; shipping_address?: AddressSnapshot | null; items: OrderItem[]; total_cents: number; currency: string; created_at: string };
+type Order = { reservation_expires_at?: string | null; reservation_active: boolean; cancellation_reason?: string | null; id: string; status: OrderStatus; payment_method?: PaymentMethod | null; paid_at?: string | null; status_history?: OrderStatusEvent[]; shipping_address?: AddressSnapshot | null; items: OrderItem[]; total_cents: number; currency: string; created_at: string };
 // §14：後端一律回傳 status_history（由舊到新，至少一筆 pending）
 type StaffOrder = Order & { buyer: { id: string; display_name: string; email: string } };
 type StaffOrderStatusInput = { status: 'shipped' | 'cancelled' };
@@ -128,8 +133,8 @@ type StaffOrderStatusInput = { status: 'shipped' | 'cancelled' };
 ## 4b. 交易與並行（已核准的跨 model 寫入規則）
 
 - 每個請求是一個 runtime 交易；SQL 中不得出現 `BEGIN`／`COMMIT`／`SAVEPOINT`。
-- 隔離等級 READ COMMITTED。扣庫存使用 `UPDATE … SET stock = stock - $qty WHERE id = $id AND stock >= $qty` 並檢查影響列數；不足回 409 `OUT_OF_STOCK`，整筆回滾。
-- 不跨請求、不跨資料庫、不使用分散式交易；寫入依固定順序並在 `SET LOCAL ROLE` 下執行（下單：確認地址 → 扣庫存並累加 sold_count → 建立訂單（含 shipping_address 快照）→ 品項快照 → 清空購物車；扣庫存依 id 排序以降低死結機率）。
+- 隔離等級 READ COMMITTED。扣庫存使用 `UPDATE … SET stock = stock - $qty, reserved_stock = reserved_stock + $qty WHERE id = $id AND stock >= $qty` 並檢查影響列數；不足回 409 `OUT_OF_STOCK`，整筆回滾。
+- 不跨請求、不跨資料庫、不使用分散式交易；寫入依固定順序並在 `SET LOCAL ROLE` 下執行（下單：確認地址 → 保留可售庫存並累加 sold_count → 建立訂單（含 shipping_address 快照）→ 品項快照 → 清空購物車；先依 product_id 排序鎖定 product 列，再依該商品 sku_id 排序處理 SKU；SKU 編輯也採同一順序）。
 - 逾時：statement 5s、交易 10s、idle_in_transaction 5s；逾時回滾並回 504 `TX_TIMEOUT`。
 - 死結（40P01）或序列化失敗（40001）：回 503 `TX_CONFLICT`，body 帶 `retryable: true`，header `Retry-After: 1`。非冪等寫入不自動重試；前端重試下單時**必須**沿用同一個 `Idempotency-Key`（§10）。
 
@@ -176,7 +181,7 @@ type StaffOrderStatusInput = { status: 'shipped' | 'cancelled' };
 | --- | --- | --- | --- |
 | `Product.options` / `variants` | 選填 | 後端一律回傳（沒有規格時為空陣列） | 前端以「缺少或空」判斷皆相容 |
 | `Product.description` | `string` | 可能為空字串 | source 中為選填；後端以空字串回傳，不回 null |
-| `ProductInput` 含 `variants` | 由 `Omit<Product,…>` 推得 | **v1 忽略 `variants`**（傳入不報錯也不寫入）；只處理 `options` | 店員規格管理為後續工作（sample-shop issue 見 §9） |
+| `ProductInput` 含 `variants` | 由 `Omit<Product,…>` 推得 | **v2 拒絕 `variants`**，回 422；只處理 `options` | 規格經 §16 的獨立端點管理，不能靜默丟失輸入 |
 | 錯誤 body `retryable` | 未定義 | 只在 `TX_CONFLICT` 出現 | 需前端處理 503 重試 |
 
 ## 6. 缺口與 SDK issue
@@ -200,7 +205,7 @@ type StaffOrderStatusInput = { status: 'shipped' | 'cancelled' };
 - 購物車 POST／更新／DELETE 皆回傳整個 `Cart`（更新方法為 PUT，見 §5）。
 - 登入／註冊回 `{access_token, expires_at}`，不發 refresh token。
 - 商品有 `category`；商品與訂單皆有 `currency`。
-- 結帳不含地址與付款欄位。
+- 結帳需要地址快照；付款獨立於建立訂單。PR #70 的選擇品項、立即購買、運費、優惠券與積分仍只在 mock，尚未包含於本版後端 source。
 
 ## 8. 編譯狀態
 
@@ -216,7 +221,7 @@ type StaffOrderStatusInput = { status: 'shipped' | 'cancelled' };
 - 加入購物車：有規格必帶 `sku_id`（否則 422 `SKU_REQUIRED`）；未知或屬於其他商品的 sku 回 404 `SKU_NOT_FOUND`；庫存依規格檢查。
 - 購物車品項只有 `product_id` 與 `sku_id` 都相同時才合併數量。
 - 下單時快照 `sku_id`、`sku_options`、`name`、`unit_price_cents`，並扣減該規格庫存。
-- v1 的 `ProductInput.variants` 會被忽略；店員規格管理（新增／修改／停用 variant）為後續工作，見 SAMPLE_SHOP_ISSUE。
+- v2 的 ProductInput.variants 回 422；店員規格管理透過 §16 的端點進行。
 
 ## 10. 冪等性（Idempotency-Key）
 
@@ -226,11 +231,11 @@ type StaffOrderStatusInput = { status: 'shipped' | 'cancelled' };
 
 - `Idempotency-Key` header **必填**（1–64 字，建議 UUID v4）；缺少回 400 `IDEMPOTENCY_KEY_REQUIRED`。
 - 範圍：同一使用者（JWT `sub`）＋同一路由。
-- 同一 key、同一 body：回傳第一次建立的訂單（相同狀態碼 201 與內容），不重複扣庫存、不重複清空購物車。
+- 同一 key、同一 body：回傳第一次建立的訂單（201，內容為其目前狀態），不重複扣庫存、不重複清空購物車。
 - 同一 key、不同 body：回 409 `IDEMPOTENCY_KEY_REUSED`。比較依據為 body（`{ address_id }`）的正規化 JSON 雜湊；同一 key 但 `address_id` 不同即回 409。
 - 第一次請求失敗（4xx、`TX_TIMEOUT`、`TX_CONFLICT`）時不保留 key，可用同一 key 重試。
 - 收到 503 `TX_CONFLICT`（`retryable: true`、`Retry-After: 1`）或網路錯誤時，前端等待後**以同一個 key** 重試；使用者重新按下「下單」才產生新 key。
-- 實作：SDK 平台層尚未支援（sdk #85），v1 以 `orders.idempotency_key` 與 method 內先查後寫模擬；並發的同 key 請求在 SDK 支援前無法完全保證只建立一筆 **〔缺口〕**。
+- 實作：SDK 平台層尚未支援（sdk #85）；v2 source 先鎖 user 列、重查 key，再以資料庫唯一索引及同交易 request_hash 保護並發。SQL 索引已測試，SDK 編譯後仍須驗證 HTTP 重送流程。
 
 ## 11. 下單時 PRODUCT_UNAVAILABLE 的錯誤細節
 
@@ -246,12 +251,13 @@ type StaffOrderStatusInput = { status: 'shipped' | 'cancelled' };
 
 ## 12. 收貨地址（前端 #29，sample-shop PR #64）
 
+- 所有地址寫入先鎖定本租戶 user 列（FOR UPDATE），再計數／讀取／更新地址，序列化首個地址、20 個上限與預設遞補。資料庫部分唯一索引保護每人唯一預設，trigger 在新增或恢復地址時以相同 user 鎖強制 20 個上限。刪除先 SELECT 保存舊 is_default，再 UPDATE；不能用更新後的 RETURNING is_default 判斷舊預設。
 - model `address`：每位使用者各自擁有（owner-key `user_id`），欄位 `id`、`recipient`、`phone`、`region`、`line1`、`is_default`、`created_at`；每人最多 20 個。
-- 驗證（與 PR #64 `lib/address.ts` 相同）：`recipient` 1–50 字；`phone` 移除空白、連字號與開頭 `+852`／`852` 後須為 `[2-9]` 開頭的 8 位數字，並以正規化後的值儲存；`region` 為 香港島／九龍／新界／離島；`line1` 5–200 字。不通過回 422 `VALIDATION_FAILED`。
+- 驗證（與 PR #64 `lib/address.ts` 相同）：`recipient` 1–50 字；`phone` 移除空白與連字號，只有國碼後恰為 8 位有效號碼（`^(?:\+852|852)([2-9][0-9]{7})$`）才移除 `+852`／`852`，最後須為 `[2-9]` 開頭的 8 位數字（例如 `85212345` 保留原值），並以正規化後的值儲存；`region` 為 香港島／九龍／新界／離島；`line1` 5–200 字。不通過回 422 `VALIDATION_FAILED`。
 - `GET /shop/v1/addresses`：回傳 `Address[]`（非 `Page`），預設地址排最前，其餘依 `created_at` 由新到舊。
 - `POST /shop/v1/addresses`：201。使用者的第一個地址自動成為預設；`is_default: true` 時在同一交易中先清除舊的預設。達 20 個回 422 `ADDRESS_LIMIT`。
 - 下單：body `address_id` 必填（缺少 422 `ADDRESS_REQUIRED`；不存在或屬於他人 404 `ADDRESS_NOT_FOUND`）。`order.place` 在同一交易中把 `recipient`／`phone`／`region`／`line1` 快照寫入 `orders.shipping_address`，之後修改地址簿不影響訂單。`address_id` 計入冪等 body 雜湊（§10）。
-- `Product.sold_count`：`order.place` 扣庫存時同時累加（有規格時加在所屬商品）；不可由 `ProductInput` 提供。
+- `Product.sold_count`：`order.place` 保留庫存時同時累加（有規格時加在所屬商品）；不可由 `ProductInput` 提供。
 - 地址簿管理（#44，前端 PR #69）：已列為正式端點 §2 #24–#26。
   - `PUT /shop/v1/addresses/{id}`：body 為 `AddressInput`，**完整取代** `recipient`／`phone`／`region`／`line1`（驗證同新增，不通過回 422 `VALIDATION_FAILED`）。`is_default` 會被忽略（不報錯也不寫入）；只有 `POST …/default` 能變更預設。回 200 `Address`。
   - `DELETE /shop/v1/addresses/{id}`：軟刪除（寫入 `deleted_at`），回 204。刪除預設地址時，在同一交易中由剩餘未刪除地址中 `created_at` 最新的一個遞補為預設；刪除最後一個地址後沒有預設地址（之後新增的第一個地址自動成為預設）。
@@ -274,15 +280,12 @@ type StaffOrderStatusInput = { status: 'shipped' | 'cancelled' };
 - 其他錯誤：400 `IDEMPOTENCY_KEY_REQUIRED`；404 `NOT_FOUND`（不存在或屬於他人）；409 `ORDER_NOT_PAYABLE`（已付款或已取消）；422 `VALIDATION_FAILED`；504 `TX_TIMEOUT`；503 `TX_CONFLICT`。
 - 冪等（套用 §10）：範圍為同一使用者＋付款路由。只有成功的付款會保留 key（model `payment-attempt`：`user_id`＋`idempotency_key` 唯一、`order_id` 唯一、`request_hash`、`method`）。同一 key 且同一訂單、同一 body 重送時回 200 與該訂單；同一 key 但訂單或 body 不同回 409 `IDEMPOTENCY_KEY_REUSED`。
 - 檢查順序：訂單存在 → 重送判斷 → 欄位驗證 → `status` 必須為 `pending` → 模擬結果。
-- 並發：狀態更新使用 `UPDATE orders SET status='paid', payment_method=…, paid_at=now() WHERE id=… AND user_id=… AND status='pending'` 並檢查影響列數；為 0 回 409 `ORDER_NOT_PAYABLE`，因此兩筆並發付款只有一筆成功。更新訂單與新增 `payment_attempts` 在同一交易中完成。
-- 庫存（已決定）：v1 維持在下單時扣庫存（§4b）。
-- 規劃中／未來工作（v1 未實作）：
-  - 付款前的庫存保留（下單時只保留、付款成功才扣）。
-  - 逾時未付款訂單自動取消並回補庫存。
-  - 追蹤 issue：sample-shop #66。
+- 並發：狀態更新使用 `UPDATE orders SET status='paid', payment_method=…, paid_at=now() WHERE id=… AND user_id=… AND status='pending' AND reservation_active AND reservation_expires_at > clock_timestamp()` 並檢查影響列數；為 0 回 409 `ORDER_NOT_PAYABLE`，因此兩筆並發付款只有一筆成功。更新訂單與新增 `payment_attempts` 在同一交易中完成。
+- 庫存：下單只保留可售數量，付款提交保留（詳見 §15）。付款與 worker 共用 order 列鎖；付款在取得鎖後用 clock_timestamp() 檢查期限，不能用交易起始 now() 放行排隊過期的付款。
+- 逾期付款回 409 ORDER_NOT_PAYABLE；該 key 不保留。取消由獨立 worker 在下一轮（約一分鐘內）執行；付款錯誤回滾不影響 worker 的交易。
 - 與 PR #65 `types.ts`／mock 的差異：
-  - mock 只驗證 `method`，不驗證 `simulate`；後端兩者都驗證，不合法回 422。
-  - mock 以同一 key 重送時不比較 body，也不回 `IDEMPOTENCY_KEY_REUSED`；後端依 §10 比較 body 雜湊與訂單 id，不同則回 409。
+  - PR #70 mock 已驗證 method 與 simulate；兩者不合法皆回 422。
+  - PR #70 mock 已比較 body 與訂單 id；與後端的 IDEMPOTENCY_KEY_REUSED 規則一致。
   - `types.ts` 中 `payment_method`、`paid_at` 為選填；後端一律回傳（未付款時為 `null`）。
 
 ## 14. 訂單狀態流程（前端 #34，sample-shop PR #68）
@@ -291,9 +294,9 @@ type StaffOrderStatusInput = { status: 'shipped' | 'cancelled' };
 
 | 目前狀態 | 動作 | 端點 | 執行者 | 新狀態 | 副作用 |
 | --- | --- | --- | --- | --- | --- |
-| （無） | 下單 | `POST /shop/v1/orders` | 買家 | `pending` | 扣庫存、累加 sold_count（§4b） |
-| `pending` | 付款 | `POST /shop/v1/orders/{id}/payments` | 買家 | `paid` | 新增 payment_attempt（§13） |
-| `pending` | 取消 | `POST …/orders/{id}/cancel` 或 `PUT …/staff/orders/{id}/status` | 買家（本人）或店員 | `cancelled` | 回補庫存、減 sold_count |
+| （無） | 下單 | `POST /shop/v1/orders` | 買家 | `pending` | 保留庫存、累加 sold_count（§4b） |
+| `pending` | 付款 | `POST /shop/v1/orders/{id}/payments` | 買家 | `paid` | 提交庫存保留、新增 payment_attempt（§13） |
+| `pending` | 取消 | `POST …/orders/{id}/cancel` 或 `PUT …/staff/orders/{id}/status` | 買家（本人）或店員 | `cancelled` | 釋放庫存保留、減 sold_count |
 | `paid` | 取消 | 同上 | 買家（本人）或店員 | `cancelled` | 回補庫存、減 sold_count、**模擬退款** |
 | `paid` | 出貨 | `PUT …/staff/orders/{id}/status`（`shipped`） | 店員 | `shipped` | — |
 | `shipped` | 確認收貨 | `POST …/orders/{id}/confirm-delivery` | 買家（本人） | `delivered` | — |
@@ -305,7 +308,7 @@ type StaffOrderStatusInput = { status: 'shipped' | 'cancelled' };
 ### 取消（買家 #20／店員 #23）
 
 - 買家只能取消本人且狀態為 `pending` 或 `paid` 的訂單；店員可取消任何人 `pending` 或 `paid` 的訂單。兩者共用 `order.cancel`。
-- 同一交易（§4b：每個請求一個交易、固定寫入順序、`SET LOCAL ROLE`）依序：鎖定並更新訂單狀態 → 回補庫存（有規格回補 `product_variants.stock`，否則 `products.stock`；依 sku_id／product_id 由小到大，與下單相同順序）並將所屬商品 `sold_count` 減去數量 → 已付款時標記退款 → 新增狀態歷程。任一步失敗整筆回滾。
+- 同一交易（§4b：每個請求一個交易、固定寫入順序、`SET LOCAL ROLE`）依序：鎖定並更新訂單狀態 → 回補庫存（有規格回補 `product_variants.stock`，否則 `products.stock`；先 product_id 再 sku_id 由小到大，與下單及規格編輯同順序）並將所屬商品 `sold_count` 減去數量 → 已付款時標記退款 → 新增狀態歷程。任一步失敗整筆回滾。
 - 已停用或軟刪除的商品／規格仍回補庫存。
 - **模擬退款：** 取消 `paid` 訂單時，該訂單最新一筆成功的 `payment_attempt` 寫入 `refunded_at`（目前每張訂單最多一筆成功付款）。**這只是示範用的紀錄，不呼叫任何金流、沒有任何真實款項移動。** `Order.payment_method` 與 `paid_at` 保留原值；v1 的 `Order` 不輸出退款欄位。
 
@@ -328,3 +331,39 @@ type StaffOrderStatusInput = { status: 'shipped' | 'cancelled' };
 - 店員變更狀態回傳型別依 `types.ts` 為 `StaffOrder`（含 `buyer`），不是 `Order`。
 - `types.ts` 的 `listStaffOrders` 參數只有 `status`、`cursor`；後端另接受選填 `limit`（與其他列表一致）。
 
+## 15. 待付款庫存保留與逾期（#66）
+
+- stock 為可售庫存；reserved_stock 為待付款保留數，皆非負整數。
+  實體在手庫存 = stock + reserved_stock。公開 stock 不含保留數。
+- 下單原子更新 stock -= quantity、reserved_stock += quantity，實體庫存不變；
+  訂單 reservation_active = true、reservation_expires_at = 資料庫 now() + 30 分鐘。
+- 付款取得 order 列鎖、檢查有效期及條件 UPDATE 後 reserved_stock -= quantity、stock 不變，
+  實體庫存此時才扣除；reservation_active = false。
+- pending 手動取消或逾期：stock += quantity、reserved_stock -= quantity；
+  paid 取消：stock += quantity，不再減 reserved_stock。SKU 庫存變更皆 version + 1。
+- Scheduler 每分鐘執行 tenant-scoped expiry job，詳見 [jobs/README.md](jobs/README.md)。
+  PostgreSQL 函數使用 FOR UPDATE SKIP LOCKED、條件 UPDATE、單一交易及固定 inventory 鎖顺序。
+  只成功的状态轉換會釋放庫存及新增 system 歷程。重跑不會重複釋放。
+- Idempotency：place 與 pay 先鎖目前 user 列，重查 key；orders 的 (user_id, idempotency_key)
+  唯一，request_hash 與訂單一同寫入。付款沿用 payment-attempt 的唯一規則。
+- 逾期付款仍回 ORDER_NOT_PAYABLE（409），不是新錯誤碼。
+  庫存保留不一致時整批回滾並告警，不得以 max(0) 隱藏壞帳。
+- 部署順序：SDK 基礎 migrations → main/001 → main/002 → main/003（同一交易）→ worker。
+  既有 pending 的 stock 扣減轉為保留，原 created_at + 30 分鐘為期限；
+  既有重複 key／多個預設地址須先人工核對，migration 會失敗，不會丟棄資料。
+- 8 個 SQL／並發測試可在本機執行；它們不證明尚未產生的 SDK lock、HTTP 或 RLS 已可運行。
+  SDK 編譯、HTTP／RLS 驗證與 scheduler 部署仍是完整驗收的缺口。
+
+## 16. 店員 SKU 管理（#61）
+
+- 端點 §2 #27–#29；VariantInput 為 options、price_cents、stock、active、可選 image_url。
+  更新帶 If-Match: "version"，缺少 428、不符 412 PRECONDITION_FAILED。
+- options 鍵集合必須恰等於商品選項集合、值必須在对应 values 中；不符 422。
+  SQL 以 (product_id, options::jsonb) 唯一，重複組合（含 inactive）回 409 SKU_EXISTS。
+- 停用／重新啟用透過 PUT active；不硬刪除、不影響既有訂單快照。
+- 商品 options 更新如果使任何 active SKU 不再有效，409 OPTIONS_IN_USE。
+  不自動停用、不自動批次產生所有組合。
+- 規格寫入先鎖 product 再 SKU；庫存保留／付款／取消共用同順序。
+  stock 更新只改可售數，reserved_stock 不由店員指定。
+- 只有店員列表含 inactive、version；公開 variants 只含 active，價格及庫存即時彙總。
+  source 的編譯／HTTP 權限驗證仍待 SDK；前端 mock 已驗證這些規則。

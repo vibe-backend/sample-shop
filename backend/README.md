@@ -40,3 +40,18 @@ backend/
 ## 狀態
 
 SDK 尚未發佈（v0.1.0 前）。目前自然語言編譯無法穩定產生可通過驗證的 lock（sdk #83、#37），因此 repo 只含 source，尚未提交 lock 與 manifest。登入／註冊另需 sdk PR #77。
+
+## #61 / #66 後續草稿
+
+已加入店員 SKU 的 source／合約，以及獨立 PostgreSQL expiry job、遷移與測試。
+SDK auth／編譯缺口仍在，這些 source 尚無可部署 lock；不能據此宣稱 HTTP backend 已上線。
+
+```sh
+npm ci --prefix backend
+npm test --prefix backend
+# 加入兩個 PostgreSQL 連線的並發測試：
+TEST_POSTGRES_URL=postgresql://postgres:test@localhost:5432/test npm test --prefix backend
+```
+
+未設定 TEST_POSTGRES_URL 時只跳過並發測試，其餘以嵌入式 PostgreSQL 測試。
+部署排程與租戶 RLS 驗收見 [jobs/README.md](jobs/README.md)。
