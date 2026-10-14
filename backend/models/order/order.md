@@ -7,7 +7,8 @@
 - status：字串，必填，只能是 pending、paid、shipped、delivered、cancelled 之一，預設 pending。
 - total_cents：整數，必填，最小 0。
 - currency：字串，必填，3 個大寫字母。
-- idempotency_key：字串，選填，最長 64 字。
+- idempotency_key：字串，必填，1 至 64 字。
+- request_hash：字串，必填，最長 64 字（建立訂單時請求 body 的雜湊，用於判斷同 key 不同 body）。
 
 ## 輸出
 - get 一併回傳 items（order_items 快照，欄位同 order-item）。

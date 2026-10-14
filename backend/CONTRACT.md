@@ -33,10 +33,10 @@
 | 8 | `PUT /catalog/v1/{slug}/products/{id}` | JWT，`roles: [staff]` | `If-Match`；body 部分 `ProductInput` | 200 `Product` | 404、412、428、422 |
 | 9 | `DELETE /catalog/v1/{slug}/products/{id}` | JWT，`roles: [staff]` | — | 204（軟刪除） | 404 |
 | 10 | `GET /shop/v1/cart-items` | JWT（本人） | — | 200 `Cart` | 401 |
-| 11 | `POST /shop/v1/cart-items` | JWT（本人） | body `product_id`, `sku_id`（商品有規格時必填）, `quantity` | 200 `Cart`（`product_id` 與 `sku_id` 都相同才累加） | 404 `PRODUCT_NOT_FOUND`、404 `SKU_NOT_FOUND`、422 `SKU_REQUIRED`、409 `OUT_OF_STOCK`（依規格）、422 `QUANTITY_LIMIT` |
+| 11 | `POST /shop/v1/cart-items` | JWT（本人） | body `product_id`, `sku_id`（商品有規格時必填）, `quantity` | 200 `Cart`（`product_id` 與 `sku_id` 都相同才累加） | 404 `PRODUCT_NOT_FOUND`、409 `PRODUCT_UNAVAILABLE`（規格全部停用）、404 `SKU_NOT_FOUND`、422 `SKU_REQUIRED`、409 `OUT_OF_STOCK`（依規格）、422 `QUANTITY_LIMIT` |
 | 12 | `PUT /shop/v1/cart-items/{id}` | JWT（本人） | body `quantity` | 200 `Cart` | 404、404 `SKU_NOT_FOUND`、409 `OUT_OF_STOCK`（依規格）、422 |
 | 13 | `DELETE /shop/v1/cart-items/{id}` | JWT（本人） | — | 200 `Cart` | 404 |
-| 14 | `POST /shop/v1/orders` | JWT（本人） | header `Idempotency-Key`（建議必帶）；body `{}`（不含地址、付款欄位） | 201 `Order` + `Location`；成功後清空購物車 | 422 `CART_EMPTY`、409 `OUT_OF_STOCK`、409 `PRODUCT_UNAVAILABLE`、504 `TX_TIMEOUT`、503 `TX_CONFLICT` |
+| 14 | `POST /shop/v1/orders` | JWT（本人） | header `Idempotency-Key`（**必填**，見 §10）；body `{}`（不含地址、付款欄位） | 201 `Order` + `Location`；成功後清空購物車 | 400 `IDEMPOTENCY_KEY_REQUIRED`、409 `IDEMPOTENCY_KEY_REUSED`、422 `CART_EMPTY`、409 `OUT_OF_STOCK`、409 `PRODUCT_UNAVAILABLE`（§11）、504 `TX_TIMEOUT`、503 `TX_CONFLICT` |
 | 15 | `GET /shop/v1/orders` | JWT（本人） | query `cursor`, `limit` | 200 `Page<Order>`（新到舊，含 items） | 401 |
 | 16 | `GET /shop/v1/orders/{id}` | JWT（本人） | path `id` | 200 `Order` | 404（不存在或非本人） |
 
@@ -104,7 +104,7 @@ type Order = { id: string; status: OrderStatus; items: OrderItem[]; total_cents:
 - 隔離等級 READ COMMITTED。扣庫存使用 `UPDATE … SET stock = stock - $qty WHERE id = $id AND stock >= $qty` 並檢查影響列數；不足回 409 `OUT_OF_STOCK`，整筆回滾。
 - 不跨請求、不跨資料庫、不使用分散式交易；寫入依固定順序並在 `SET LOCAL ROLE` 下執行（下單：扣庫存 → 建立訂單 → 品項快照 → 清空購物車；扣庫存依 id 排序以降低死結機率）。
 - 逾時：statement 5s、交易 10s、idle_in_transaction 5s；逾時回滾並回 504 `TX_TIMEOUT`。
-- 死結（40P01）或序列化失敗（40001）：回 503 `TX_CONFLICT`，body 帶 `retryable: true`，header `Retry-After: 1`。非冪等寫入不自動重試；前端重試下單時請沿用同一個 `Idempotency-Key`。
+- 死結（40P01）或序列化失敗（40001）：回 503 `TX_CONFLICT`，body 帶 `retryable: true`，header `Retry-After: 1`。非冪等寫入不自動重試；前端重試下單時**必須**沿用同一個 `Idempotency-Key`（§10）。
 
 ## 4c. 錯誤碼一覽
 
@@ -117,7 +117,9 @@ type Order = { id: string; status: OrderStatus; items: OrderItem[]; total_cents:
 | 409 | `EMAIL_TAKEN` | register | email 已被使用 |
 | 409 | `CONFLICT` | 新增商品 | slug 重複 |
 | 409 | `OUT_OF_STOCK` | 購物車、下單 | 庫存不足（有規格時依規格） |
-| 409 | `PRODUCT_UNAVAILABLE` | 下單 | 購物車中商品或規格已下架 |
+| 409 | `PRODUCT_UNAVAILABLE` | 加入購物車、下單 | 商品有規格但全部停用；或下單時購物車中商品／規格已下架。下單時 `details.cart_item_ids` 列出受影響品項（§11） |
+| 400 | `IDEMPOTENCY_KEY_REQUIRED` | 下單 | 未帶 `Idempotency-Key`（§10） |
+| 409 | `IDEMPOTENCY_KEY_REUSED` | 下單 | 同一 key 但 body 不同（§10） |
 | 412 / 428 | — | 更新商品 | `If-Match` 不符／缺少 |
 | 422 | `VALIDATION_FAILED` | 全部 | 欄位驗證失敗或未宣告欄位 |
 | 422 | `SKU_REQUIRED` | 加入購物車 | 商品有規格但未提供 `sku_id` |
@@ -140,7 +142,7 @@ type Order = { id: string; status: OrderStatus; items: OrderItem[]; total_cents:
 | --- | --- | --- | --- |
 | `Product.options` / `variants` | 選填 | 後端一律回傳（沒有規格時為空陣列） | 前端以「缺少或空」判斷皆相容 |
 | `Product.description` | `string` | 可能為空字串 | source 中為選填；後端以空字串回傳，不回 null |
-| `ProductInput` 含 `variants` | 由 `Omit<Product,…>` 推得 | 新增／更新商品只接受 `options`；variant 管理端點待定 | 待確認 |
+| `ProductInput` 含 `variants` | 由 `Omit<Product,…>` 推得 | **v1 忽略 `variants`**（傳入不報錯也不寫入）；只處理 `options` | 店員規格管理為後續工作（sample-shop issue 見 §9） |
 | 錯誤 body `retryable` | 未定義 | 只在 `TX_CONFLICT` 出現 | 需前端處理 503 重試 |
 
 ## 6. 缺口與 SDK issue
@@ -174,9 +176,34 @@ type Order = { id: string; status: OrderStatus; items: OrderItem[]; total_cents:
 
 ## 9. 規格（SKU）規則（前端 #17／PR #60）
 
-- 商品有 active 規格時：`price_cents` = active 規格最低價，`stock` = active 規格庫存總和，`in_stock` = `stock > 0`。inactive 或已刪除的規格不出現在 `variants`，也不參與計算。
+- 商品有 active 規格時：`price_cents` = active 規格最低價（**庫存為 0 的 active 規格仍計入最低價**），`stock` = active 規格庫存總和，`in_stock` = `stock > 0`。inactive 或已刪除的規格不出現在 `variants`，也不參與計算。
+- 商品有 `options` 但規格**全部 inactive**：視為不可購買。`variants` 為空陣列、`stock` = 0、`in_stock` = false；`price_cents` 維持商品本身的基本價格（僅供顯示，不可據此購買）。加入購物車回 409 `PRODUCT_UNAVAILABLE`。
 - 商品沒有規格時：`options`、`variants` 回傳空陣列。
 - 加入購物車：有規格必帶 `sku_id`（否則 422 `SKU_REQUIRED`）；未知或屬於其他商品的 sku 回 404 `SKU_NOT_FOUND`；庫存依規格檢查。
 - 購物車品項只有 `product_id` 與 `sku_id` 都相同時才合併數量。
 - 下單時快照 `sku_id`、`sku_options`、`name`、`unit_price_cents`，並扣減該規格庫存。
-- 規格的店員管理端點（新增／修改 variant）尚未定義，待確認。
+- v1 的 `ProductInput.variants` 會被忽略；店員規格管理（新增／修改／停用 variant）為後續工作，見 SAMPLE_SHOP_ISSUE。
+
+## 10. 冪等性（Idempotency-Key）
+
+適用：`POST /shop/v1/orders`。
+
+- `Idempotency-Key` header **必填**（1–64 字，建議 UUID v4）；缺少回 400 `IDEMPOTENCY_KEY_REQUIRED`。
+- 範圍：同一使用者（JWT `sub`）＋同一路由。
+- 同一 key、同一 body：回傳第一次建立的訂單（相同狀態碼 201 與內容），不重複扣庫存、不重複清空購物車。
+- 同一 key、不同 body：回 409 `IDEMPOTENCY_KEY_REUSED`。目前 body 固定為 `{}`，比較依據為 body 的正規化 JSON 雜湊。
+- 第一次請求失敗（4xx、`TX_TIMEOUT`、`TX_CONFLICT`）時不保留 key，可用同一 key 重試。
+- 收到 503 `TX_CONFLICT`（`retryable: true`、`Retry-After: 1`）或網路錯誤時，前端等待後**以同一個 key** 重試；使用者重新按下「下單」才產生新 key。
+- 實作：SDK 平台層尚未支援（sdk #85），v1 以 `orders.idempotency_key` 與 method 內先查後寫模擬；並發的同 key 請求在 SDK 支援前無法完全保證只建立一筆 **〔缺口〕**。
+
+## 11. 下單時 PRODUCT_UNAVAILABLE 的錯誤細節
+
+下單時購物車中有商品或規格已下架、刪除或規格全部停用時回 409：
+
+```json
+{ "error": { "code": "PRODUCT_UNAVAILABLE", "message": "部分商品已無法購買", "request_id": "…",
+             "details": { "cart_item_ids": ["…", "…"] } } }
+```
+
+- `details.cart_item_ids` 列出所有受影響的購物車品項 id，前端可標示或移除後再下單。
+- SDK 目前的錯誤格式只有 `code`、`message`、`request_id`，**無法輸出 `details`** **〔缺口〕**。在 SDK 支援前，前端遇到此錯誤應重新取得購物車，以 `product.in_stock` 為 false 或商品已不存在的品項判斷。

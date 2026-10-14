@@ -7,7 +7,8 @@
 
 ## 做法
 1. 查詢 product：必須存在、active 為 true、未刪除；否則回 `PRODUCT_NOT_FOUND`。
-2. 查詢此商品是否有 active 規格。
+2. 查詢此商品的規格。
+   - 商品有 options 但沒有任何 active 規格：回 `PRODUCT_UNAVAILABLE`。
    - 有規格而未提供 sku_id：回 `SKU_REQUIRED`。
    - 提供 sku_id：以 sku_id 查詢 product_variants，必須存在、active、未刪除，且 product_id 相同；否則回 `SKU_NOT_FOUND`。
    - 沒有規格而提供 sku_id：回 `SKU_NOT_FOUND`。
@@ -17,6 +18,6 @@
 6. 回傳該品項 id、product_id、sku_id、quantity。
 
 ## 錯誤
-- PRODUCT_NOT_FOUND、SKU_REQUIRED、SKU_NOT_FOUND、QUANTITY_LIMIT、OUT_OF_STOCK。
+- PRODUCT_NOT_FOUND、PRODUCT_UNAVAILABLE、SKU_REQUIRED、SKU_NOT_FOUND、QUANTITY_LIMIT、OUT_OF_STOCK。
 
 此 method 會寫入資料（writes: true）。

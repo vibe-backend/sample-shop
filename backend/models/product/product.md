@@ -16,7 +16,9 @@
 
 ## 規格與彙總
 - 規格（SKU）存在 product-variant model。
-- 商品有規格時，對外輸出的 price_cents 為「active 的規格中最低的 price_cents」，stock 為「active 的規格 stock 總和」，in_stock 為 stock > 0；資料表中 price_cents 與 stock 欄位此時不作為對外依據。
+- 商品有 active 規格時，對外輸出的 price_cents 為「active 的規格中最低的 price_cents」（庫存為 0 的 active 規格也計入），stock 為「active 的規格 stock 總和」，in_stock 為 stock > 0。
+- 商品有 options 但規格全部 inactive 時，視為不可購買：variants 為空陣列、stock 為 0、in_stock 為 false，price_cents 輸出商品本身的基本價格（僅供顯示）。
+- 商品沒有 options 時，沿用商品本身的 price_cents 與 stock。
 
 ## CRUD
 - create、get、update（以 If-Match 樂觀鎖）、delete（軟刪除）。

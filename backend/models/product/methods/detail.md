@@ -8,7 +8,7 @@
 ## 做法
 1. 以主鍵查詢 products（未刪除；include_inactive 為 false 時加 active = true）；查無回 `NOT_FOUND`。
 2. 查詢此商品的 product_variants（未刪除、active = true）。
-3. 有規格時，依「規格與彙總」規則計算 price_cents、stock、in_stock；沒有規格時沿用商品欄位，in_stock 為 stock > 0。
+3. 有規格時，依 product 的「規格與彙總」規則（含規格全部停用時不可購買）計算 price_cents、stock、in_stock；沒有規格時沿用商品欄位，in_stock 為 stock > 0。
 
 ## 輸出
 - 商品所有欄位，加上 options（陣列，沒有規格時為空陣列）與 variants（陣列，每筆含 id、options、price_cents、stock、in_stock、image_url）。
