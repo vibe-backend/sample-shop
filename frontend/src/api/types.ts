@@ -156,6 +156,8 @@ export interface CartItem {
   unavailable?: boolean;
   original_price_cents?: number;
   price_changed?: boolean;
+  /** Guest line ids retained while merging into an existing account SKU line. */
+  merged_from_ids?: string[];
 }
 
 export interface Cart {

@@ -53,6 +53,18 @@ describe('shopping draft flows', () => {
     await screen.findByRole('button', { name: '模擬付款成功' }, { timeout: 5000 });
     expect((await api.getCart()).items.map((it) => it.product.id)).toEqual(['p_010']);
   }, 15000);
+  it('keeps guest selected checkout working after merging into an existing account line', async () => {
+    tokenStore.set(await api.login({ email: 'demo@example.com', password: 'demo1234' }));
+    await api.addCartItem('p_007', 1);
+    tokenStore.clear();
+    const guest = await api.addCartItem('p_007', 2);
+    tokenStore.set(await api.login({ email: 'demo@example.com', password: 'demo1234' }));
+    renderAt(`/checkout?items=${guest.items[0].id}`);
+    const submit = await screen.findByRole('button', { name: '確認下單' }, { timeout: 5000 });
+    fireEvent.click(submit);
+    await screen.findByRole('button', { name: '模擬付款成功' }, { timeout: 5000 });
+    expect((await api.listOrders()).items[0].items[0].quantity).toBe(3);
+  }, 15000);
   it('allows gallery switching and supports a direct category URL with a 404 for unknown slugs', async () => {
     const { unmount } = renderAt('/products/p_001');
     const image = await screen.findByRole('img', { name: '手工陶瓷馬克杯' }, { timeout: 5000 });

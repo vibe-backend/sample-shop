@@ -27,6 +27,7 @@ interface StoredCartLine {
   sku_id?: string | null;
   quantity: number;
   original_price_cents?: number;
+  merged_from_ids?: string[];
 }
 
 export interface MockState extends FeatureState {
@@ -325,8 +326,10 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
       const existing = account.find(
         (x) => x.product_id === line.product_id && (x.sku_id ?? null) === (line.sku_id ?? null),
       );
-      if (existing) existing.quantity = Math.min(MAX_QTY, existing.quantity + line.quantity);
-      else account.push({ ...line, id: id('ci') });
+      if (existing) {
+        existing.quantity = Math.min(MAX_QTY, existing.quantity + line.quantity);
+        existing.merged_from_ids = [...new Set([...(existing.merged_from_ids ?? []), line.id])];
+      } else account.push({ ...line });
     }
     state.carts.guest = [];
     state.sessions[access_token] = { user_id: u.id, expires_at };
@@ -367,6 +370,7 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
       return [
         {
           id: l.id,
+          merged_from_ids: l.merged_from_ids,
           stock: v?.stock ?? p.stock,
           unavailable: !usable,
           original_price_cents: l.original_price_cents,

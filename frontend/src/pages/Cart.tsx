@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Minus, Plus } from 'lucide-react';
 import {
@@ -57,6 +57,10 @@ export function CartPage() {
   const [opErr, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
   const [picked, setPicked] = useState<string[] | null>(null);
+  useEffect(() => {
+    setCart(null);
+    setPicked(null);
+  }, [me?.id]);
   const c = cart ?? loaded;
   async function op(fn: () => Promise<Cart>) {
     setBusy(true);
@@ -270,7 +274,7 @@ export async function checkoutCart(params: URLSearchParams): Promise<Cart> {
   const picked = params.get('items');
   if (picked !== null) {
     const ids = picked.split(',');
-    c.items = c.items.filter((it) => ids.includes(it.id));
+    c.items = c.items.filter((it) => ids.includes(it.id) || it.merged_from_ids?.some((id) => ids.includes(id)));
     c.subtotal_cents = c.items.reduce((sum, it) => sum + it.line_total_cents, 0);
   }
   return c;
@@ -350,7 +354,7 @@ export function CheckoutPage() {
           sku_id: params.get('sku'),
           quantity: Number(params.get('qty') ?? 1),
         };
-      else if (params.has('items')) body.item_ids = params.get('items')!.split(',');
+      else if (params.has('items')) body.item_ids = cart.items.map((it) => it.id);
     }
     const bodyString = JSON.stringify(body);
     if (attempt.current?.body !== bodyString) attempt.current = { body: bodyString, key: crypto.randomUUID() };
