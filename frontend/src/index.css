@@ -25,6 +25,8 @@
     --color-border: var(--border);
     --color-destructive: var(--destructive);
     --color-success: var(--success);
+    --color-price: var(--price);
+    --color-brand: var(--brand);
     --color-warning: var(--warning);
     --color-accent-foreground: var(--accent-foreground);
     --color-accent: var(--accent);
@@ -34,6 +36,7 @@
     --color-secondary: var(--secondary);
     --color-primary-foreground: var(--primary-foreground);
     --color-primary: var(--primary);
+    --color-primary-hover: var(--primary-hover);
     --color-popover-foreground: var(--popover-foreground);
     --color-popover: var(--popover);
     --color-card-foreground: var(--card-foreground);
@@ -53,16 +56,19 @@
     color-scheme: light;
     --success: #1a7f37;
     --warning: #b25000;
-    --background: #fbfbfd;
+    /* WCAG AA: #d4002a is 5.48:1 on white, 4.96:1 on --secondary. */
+    --price: #d4002a;
+    --background: #f4f4f4;
     --foreground: #1d1d1f;
     --card: oklch(1 0 0);
     --card-foreground: oklch(0.145 0 0);
     --popover: oklch(1 0 0);
     --popover-foreground: oklch(0.145 0 0);
-    --primary: #0071e3;
+    /* Taobao-like orange darkened for AA: white text 5.03:1; as text on #f4f4f4 4.58:1. */
+    --primary: #cc3a00;
     --primary-foreground: #ffffff;
-    --secondary: oklch(0.97 0 0);
-    --secondary-foreground: oklch(0.205 0 0);
+    --secondary: #fff1e8;
+    --secondary-foreground: #c43c00;
     --muted: oklch(0.97 0 0);
     --muted-foreground: #6e6e73;
     --accent: oklch(0.97 0 0);
@@ -70,13 +76,15 @@
     --destructive: oklch(0.577 0.245 27.325);
     --border: oklch(0.922 0 0);
     --input: oklch(0.922 0 0);
-    --ring: #0071e3;
+    --ring: #cc3a00; /* focus ring 5.0:1 on white (opaque) */
+    --primary-hover: #b33300; /* opaque hover, white text 6.0:1 */
+    --brand: #ff5000; /* decorative only (borders/accents), never behind text */
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
     --chart-3: oklch(0.439 0 0);
     --chart-4: oklch(0.371 0 0);
     --chart-5: oklch(0.269 0 0);
-    --radius: 0.875rem;
+    --radius: 0.625rem;
     --sidebar: oklch(0.985 0 0);
     --sidebar-foreground: oklch(0.145 0 0);
     --sidebar-primary: oklch(0.205 0 0);
@@ -91,14 +99,16 @@
     color-scheme: dark;
     --success: #30d158;
     --warning: #ffb340;
-    --background: #000000;
+    --price: #ff6b81; /* 6.2:1 on card, 7.0:1 on background */
+    --background: #0f0f10;
     --foreground: #f5f5f7;
     --card: #1c1c1e;
     --card-foreground: oklch(0.985 0 0);
     --popover: #1c1c1e;
     --popover-foreground: oklch(0.985 0 0);
-    --primary: #2997ff;
-    --primary-foreground: #ffffff;
+    /* Dark mode: light orange with dark text (7.4:1). */
+    --primary: #ff7a33;
+    --primary-foreground: #1a0a00;
     --secondary: oklch(0.269 0 0);
     --secondary-foreground: oklch(0.985 0 0);
     --muted: oklch(0.269 0 0);
@@ -108,7 +118,9 @@
     --destructive: oklch(0.704 0.191 22.216);
     --border: oklch(1 0 0 / 10%);
     --input: oklch(1 0 0 / 15%);
-    --ring: #2997ff;
+    --ring: #ff7a33; /* 6.5:1 on card */
+    --primary-hover: #ff9a5c; /* dark text 9.2:1 */
+    --brand: #ff7a33;
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
     --chart-3: oklch(0.439 0 0);
@@ -126,7 +138,7 @@
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border outline-ring;
     }
   body {
     @apply bg-background text-foreground;
@@ -142,4 +154,20 @@
   html {
     -webkit-font-smoothing: antialiased;
   }
+}
+
+/* Taobao-style storefront helpers (own art only; no third-party marks). */
+@layer components {
+  /* AA: dark text on amber (6.8:1 at the darkest stop); white on deep orange (≥5.0:1). */
+  .tb-btn-cart {
+    background: linear-gradient(90deg, #ffc500, #ff9402);
+  }
+  .tb-btn-buy {
+    background: linear-gradient(90deg, #cc3a00, #a33a00);
+  }
+}
+
+@keyframes tb-fade {
+  from { opacity: 0.4; }
+  to { opacity: 1; }
 }

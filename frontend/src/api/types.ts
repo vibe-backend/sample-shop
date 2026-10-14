@@ -58,6 +58,8 @@ export interface Product {
   in_stock: boolean;
   active: boolean;
   created_at: string;
+  /** Optional display field (「已售 N」); hidden when absent, e.g. real mode until the contract adds it. */
+  sold_count?: number;
   /**
    * Contract addition (#17): spec groups, e.g. [{ name: '顏色', values: ['黑色', '米白'] }].
    * Absent/empty → product has no variants. When present, price_cents is the lowest SKU price

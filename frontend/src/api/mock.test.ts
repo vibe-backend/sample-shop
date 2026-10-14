@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { createMockApi, migrateV1 } from './mock';
+import { createMockApi, migrateV1, stableStringify } from './mock';
 import { seedProducts, syncVariantTotals } from './seed';
 import { formatPrice, lineTotal, subtotal } from './money';
 import { ApiRequestError } from './types';
@@ -232,3 +232,28 @@ describe('SKU contract rules (CONTRACT.md @dd5bf0b §9)', () => {
   });
 });
 
+
+describe('mock internals (#60 review)', () => {
+  it('hashes bodies deeply and key-order independently', () => {
+    expect(stableStringify({ b: { y: 1, x: [2, { d: 1, c: 2 }] }, a: 1 })).toBe(stableStringify({ a: 1, b: { x: [2, { c: 2, d: 1 }], y: 1 } }));
+    expect(stableStringify({ a: { x: 1 } })).not.toBe(stableStringify({ a: { x: 2 } }));
+  });
+  it('keeps v1 data when writing v2 fails', () => {
+    const store = new Map<string, string>([['shop.mock.v1', JSON.stringify(createMockApi().state)]]);
+    const ls = {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: () => {
+        throw new Error('QuotaExceededError');
+      },
+      removeItem: (k: string) => void store.delete(k),
+    };
+    const prev = (globalThis as { localStorage?: unknown }).localStorage;
+    (globalThis as { localStorage?: unknown }).localStorage = ls;
+    try {
+      createMockApi({ persist: true });
+      expect(store.has('shop.mock.v1')).toBe(true);
+    } finally {
+      (globalThis as { localStorage?: unknown }).localStorage = prev;
+    }
+  });
+});
