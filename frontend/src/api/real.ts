@@ -38,7 +38,7 @@ export function createRealApi(baseUrl: string, slug: string): ShopApi {
     if (res.status === 204) return undefined as T;
     const data = await res.json().catch(() => null);
     if (!res.ok) {
-      // CONTRACT.md §11 @47bc45e wraps errors as { error: { code, message } }; accept a flat body too.
+      // CONTRACT.md §11 @a3d4304 wraps errors as { error: { code, message } }; accept a flat body too.
       const e = data && typeof data.error === 'object' && data.error ? data.error : data;
       const code = (e && typeof e.code === 'string' && e.code) || `HTTP_${res.status}`;
       const message = (e && typeof e.message === 'string' && e.message) || res.statusText;
@@ -81,7 +81,7 @@ export function createRealApi(baseUrl: string, slug: string): ShopApi {
       req<Cart>('POST', '/shop/v1/cart-items', sku_id ? { product_id, sku_id, quantity } : { product_id, quantity }),
     updateCartItem: (id, quantity) => req<Cart>('PUT', `/shop/v1/cart-items/${encodeURIComponent(id)}`, { quantity }),
     removeCartItem: (id) => req<Cart>('DELETE', `/shop/v1/cart-items/${encodeURIComponent(id)}`),
-    // CONTRACT.md §10 @47bc45e (backend/markdown-v1): Idempotency-Key is required; on 503 TX_CONFLICT or a
+    // CONTRACT.md §10 @a3d4304 (backend/markdown-v1): Idempotency-Key is required; on 503 TX_CONFLICT or a
     // network error, wait Retry-After (default 1s) and retry with the SAME key, at most twice.
     createOrder: async (key, body) => {
       for (let attempt = 0; ; attempt++) {
@@ -96,7 +96,7 @@ export function createRealApi(baseUrl: string, slug: string): ShopApi {
     },
     listOrders: (cursor) => req<Page<Order>>('GET', '/shop/v1/orders' + qs({ cursor })),
     getOrder: (id) => req<Order>('GET', `/shop/v1/orders/${encodeURIComponent(id)}`),
-    // §2 #17/#18, §12 @42a33ae
+    // §2 #17/#18, §12 @a3d4304
     listAddresses: () => req<Address[]>('GET', '/shop/v1/addresses'),
     createAddress: (a) => req<Address>('POST', '/shop/v1/addresses', a),
     createProduct: (p: ProductInput) => req<Product>('POST', cat, p),

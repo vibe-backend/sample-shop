@@ -133,7 +133,7 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
     if (opts.persist) globalThis.localStorage?.setItem(STORAGE_KEY, JSON.stringify({ ...state, sessions: {} }));
   }
   const addressesOf = (uid: string) => ((state.addresses ??= {})[uid] ??= []);
-  // §12 @42a33ae: default first, then newest first.
+  // §12 @a3d4304: default first, then newest first.
   const sortAddresses = (xs: Address[]) => [...xs].sort((a, b) => Number(b.is_default) - Number(a.is_default) || b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id));
   const id = (prefix: string) => `${prefix}_${(++state.seq).toString(36)}`;
 
@@ -218,7 +218,7 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
       if (skuId) throw err(404, 'SKU_NOT_FOUND', '找不到此規格');
       return null;
     }
-    // CONTRACT.md §11 @47bc45e: all variants inactive → variants [] → 409 PRODUCT_UNAVAILABLE.
+    // CONTRACT.md §11 @a3d4304: all variants inactive → variants [] → 409 PRODUCT_UNAVAILABLE.
     if (!p.variants?.length) throw err(409, 'PRODUCT_UNAVAILABLE', `「${p.name}」已無法購買`);
     if (!skuId) throw err(422, 'SKU_REQUIRED', '請先選擇商品規格');
     const v = (p.variants ?? []).find((x) => x.id === skuId);
@@ -328,7 +328,7 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
     createOrder: (key, body) =>
       run(() => {
         const u = currentUser();
-        // CONTRACT.md §10 @47bc45e (branch backend/markdown-v1): key required; same key + same body replays
+        // CONTRACT.md §10 @a3d4304 (branch backend/markdown-v1): key required; same key + same body replays
         // the original order; different body → 409; failed attempts don't retain the key.
         if (!key) throw err(400, 'IDEMPOTENCY_KEY_REQUIRED', '缺少 Idempotency-Key');
         const ik = `${u.id}:${key}`;
@@ -339,11 +339,11 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
           return (state.orders[u.id] ?? []).find((o) => o.id === prev)!;
         }
         const cart = cartOf(u.id);
-        if (!cart.items.length) throw err(422, 'CART_EMPTY', '購物車是空的');
-        // §12 @42a33ae: address_id required and snapshotted onto the order.
+        // §12 @a3d4304: address checks come before CART_EMPTY; address_id is snapshotted onto the order.
         if (!body?.address_id) throw err(422, 'ADDRESS_REQUIRED', '請選擇收貨地址');
         const addr = addressesOf(u.id).find((a) => a.id === body.address_id);
         if (!addr) throw err(404, 'ADDRESS_NOT_FOUND', '找不到收貨地址');
+        if (!cart.items.length) throw err(422, 'CART_EMPTY', '購物車是空的');
         if ((state.carts[u.id] ?? []).some(isUnavailable)) throw err(409, 'PRODUCT_UNAVAILABLE', '部分商品已無法購買');
         for (const it of cart.items) {
           const p = findProduct(it.product.id, true);
@@ -352,7 +352,7 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
         for (const it of cart.items) {
           const p = findProduct(it.product.id, true);
           const v = skuOf(p, it.sku?.id);
-          p.sold_count = (p.sold_count ?? 0) + it.quantity; // §12 @42a33ae
+          p.sold_count = (p.sold_count ?? 0) + it.quantity; // §12 @a3d4304
           if (v) {
             v.stock -= it.quantity;
             v.in_stock = v.stock > 0;
