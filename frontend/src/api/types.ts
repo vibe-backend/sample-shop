@@ -48,6 +48,8 @@ export interface Me {
 }
 
 export interface Product {
+  /** HTTP ETag from a product detail response; pass it back unchanged when editing. */
+  etag?: string;
   id: string;
   slug: string;
   name: string;
@@ -126,7 +128,7 @@ export interface ProductQuery {
 /** CONTRACT.md §3 @a3d4304: `sold_count` is server-maintained and never part of the input. */
 export type ProductInput = Omit<
   Product,
-  'id' | 'in_stock' | 'created_at' | 'sold_count' | 'rating_avg' | 'review_count' | 'reserved_stock'
+  'id' | 'in_stock' | 'created_at' | 'sold_count' | 'rating_avg' | 'review_count' | 'reserved_stock' | 'etag'
 >;
 
 export interface ProductSummary {
@@ -275,6 +277,7 @@ export interface ShopApi extends ShopFeatures {
   /** Staff only; includes inactive products. GET /catalog/v1/{slug}/staff/products */
   listStaffProducts(q?: ProductQuery): Promise<Page<Product>>;
   getProduct(id: string): Promise<Product>;
+  getStaffProduct(id: string): Promise<Product>;
   getCart(): Promise<Cart>;
   addCartItem(productId: string, quantity: number, skuId?: string | null): Promise<Cart>;
   updateCartItem(itemId: string, quantity: number): Promise<Cart>;
@@ -310,6 +313,6 @@ export interface ShopApi extends ShopFeatures {
   /** §12 @a3d4304 (planned): POST /shop/v1/addresses/{id}/default → 200 Address. */
   setDefaultAddress(id: string): Promise<Address>;
   createProduct(p: ProductInput): Promise<Product>;
-  updateProduct(id: string, p: Partial<ProductInput>): Promise<Product>;
+  updateProduct(id: string, p: Partial<ProductInput>, etag?: string): Promise<Product>;
   deleteProduct(id: string): Promise<void>;
 }

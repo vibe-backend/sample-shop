@@ -6,6 +6,8 @@ import { api, tokenStore, resetMockData } from './api';
 import { AuthProvider } from './auth';
 import { ThemeProvider } from './theme';
 import App from './App';
+import { Carousel } from './pages/Products';
+import { recordSearch } from './lib/browsing';
 const renderAt = (path: string) =>
   render(
     <ThemeProvider>
@@ -45,6 +47,7 @@ describe('shopping draft flows', () => {
     await api.addCartItem('p_007', 1);
     await api.addCartItem('p_010', 1);
     renderAt('/cart');
+    await screen.findByRole('button', { name: '帳戶' }, { timeout: 5000 });
     const check = await screen.findByRole('checkbox', { name: '選擇 鋁合金手機架' }, { timeout: 5000 });
     fireEvent.click(check);
     fireEvent.click(screen.getByRole('button', { name: '前往結帳' }));
@@ -79,4 +82,42 @@ describe('shopping draft flows', () => {
     renderAt('/category/unknown');
     expect(screen.getByRole('heading', { name: '找不到分類（404）' })).toBeTruthy();
   }, 15000);
+});
+
+describe('discovery acceptance criteria', () => {
+  it('moves banners in both directions and keeps the focused link attached after a keyboard change', () => {
+    render(
+      <MemoryRouter>
+        <Carousel />
+      </MemoryRouter>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: '下一張推介' }));
+    expect(screen.getByRole('link', { name: '文具新學期' }).getAttribute('href')).toBe('/category/stationery');
+    fireEvent.click(screen.getByRole('button', { name: '上一張推介' }));
+    const banner = screen.getByRole('link', { name: '秋日家居節' });
+    banner.focus();
+    fireEvent.keyDown(banner, { key: 'ArrowLeft' });
+    expect(screen.getByRole('link', { name: '咖啡生活' })).toBe(banner);
+    expect(document.activeElement).toBe(banner);
+  });
+  it('selects a suggestion from the search input with arrows and Enter', async () => {
+    localStorage.removeItem('shop.searches.v1');
+    recordSearch('文具');
+    recordSearch('咖啡');
+    renderAt('/');
+    const input = screen.getAllByRole('searchbox', { name: '搜尋商品' })[0];
+    fireEvent.focus(input);
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await screen.findByText('「文具」的搜尋結果');
+    expect(input.getAttribute('value')).toBe('文具');
+  });
+  it('clears the category route along with all query filters', async () => {
+    renderAt('/category/kitchen?brand=Sample+Select');
+    await screen.findByRole('heading', { name: '廚房', level: 1 });
+    fireEvent.click(screen.getByRole('button', { name: '清除所有篩選' }));
+    await screen.findByRole('heading', { name: '精選好物', level: 1 });
+    await screen.findAllByText('鋁合金手機架', {}, { timeout: 5000 });
+  });
 });

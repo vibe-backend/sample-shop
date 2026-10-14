@@ -50,7 +50,7 @@ function Summary({
 const invalid = (it: Cart['items'][number]) =>
   it.unavailable || !it.product.in_stock || it.quantity > (it.stock ?? Infinity);
 export function CartPage() {
-  const { me, setCartCount } = useAuth();
+  const { me, ready, setCartCount } = useAuth();
   const nav = useNavigate();
   const [loaded, error, loading] = useAsync(() => api.getCart(), [me?.id]);
   const [cart, setCart] = useState<Cart | null>(null);
@@ -75,7 +75,7 @@ export function CartPage() {
       setBusy(false);
     }
   }
-  if (loading) return <Spinner />;
+  if (!ready || loading) return <Spinner />;
   if (!c) return <ErrorNote error={error} />;
   const selected = (
     API_MODE === 'real'

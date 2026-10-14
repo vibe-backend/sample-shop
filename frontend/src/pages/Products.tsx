@@ -14,7 +14,7 @@ import { CATEGORY_TREE, categorySlug } from '../lib/commerce';
 import { recordVisit } from '../lib/browsing';
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ChevronLeft, Pause, Play } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Pause, Play } from 'lucide-react';
 import { api, API_MODE, formatPrice, type Product, type ProductSort } from '../api';
 import { findVariant, hasVariants, isValueAvailable, missingOptions, priceRange, type Selection } from '@/lib/sku';
 import { cn } from '@/lib/utils';
@@ -124,17 +124,18 @@ export function Carousel() {
       role="region"
       aria-roledescription="carousel"
       aria-label="推介"
+      onKeyDown={(e) => {
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+          e.preventDefault();
+          setI((i) => (i + (e.key === 'ArrowLeft' ? SLIDES.length - 1 : 1)) % SLIDES.length);
+        }
+      }}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       onFocus={() => setFocus(true)}
       onBlur={(e) => !e.currentTarget.contains(e.relatedTarget as Node | null) && setFocus(false)}
     >
       <div
-        onKeyDown={(e) => {
-          if (e.key === 'ArrowLeft') setI((i) => (i + SLIDES.length - 1) % SLIDES.length);
-          if (e.key === 'ArrowRight') setI((i) => (i + 1) % SLIDES.length);
-        }}
-        key={i}
         aria-live={rotating ? 'off' : 'polite'}
         aria-roledescription="slide"
         aria-label={`第 ${i + 1} 張，共 ${SLIDES.length} 張`}
@@ -152,6 +153,14 @@ export function Carousel() {
         </span>
       </div>
       <div className="absolute inset-x-0 bottom-1 flex items-center justify-center gap-0.5">
+        <button
+          type="button"
+          aria-label="上一張推介"
+          onClick={() => setI((i) => (i + SLIDES.length - 1) % SLIDES.length)}
+          className="grid size-8 place-items-center rounded-full text-white hover:bg-white/20 focus-visible:ring-2 focus-visible:ring-white"
+        >
+          <ChevronLeft className="size-4" aria-hidden="true" />
+        </button>
         <button
           type="button"
           onClick={() => setPaused((p) => !p)}
@@ -178,6 +187,14 @@ export function Carousel() {
             />
           </button>
         ))}
+        <button
+          type="button"
+          aria-label="下一張推介"
+          onClick={() => setI((i) => (i + 1) % SLIDES.length)}
+          className="grid size-8 place-items-center rounded-full text-white hover:bg-white/20 focus-visible:ring-2 focus-visible:ring-white"
+        >
+          <ChevronRight className="size-4" aria-hidden="true" />
+        </button>
       </div>
     </div>
   );
@@ -286,6 +303,11 @@ export function ProductListPage() {
       })
       .catch(setError)
       .finally(() => setMore(false));
+  }
+
+  function clearFilters() {
+    if (slug) nav('/');
+    else setParams({});
   }
 
   function set(k: string, v: string) {
@@ -456,7 +478,7 @@ export function ProductListPage() {
             ))}
           </span>
         ))}
-        <Button variant="link" size="sm" onClick={() => setParams({})}>
+        <Button variant="link" size="sm" onClick={clearFilters}>
           清除所有篩選
         </Button>
         <ImageSearch />
@@ -472,7 +494,7 @@ export function ProductListPage() {
       ) : items.length === 0 ? (
         <Empty>
           <p>找不到符合條件的商品。</p>
-          <Button variant="link" onClick={() => setParams({})}>
+          <Button variant="link" onClick={clearFilters}>
             清除篩選
           </Button>
         </Empty>
@@ -571,6 +593,13 @@ export function ProductDetailPage() {
   const [msg, setMsg] = useState('');
   const [hint, setHint] = useState('');
   const [addErr, setAddErr] = useState<unknown>(null);
+  useEffect(() => {
+    setQty(1);
+    setSel({});
+    setMsg('');
+    setHint('');
+    setAddErr(null);
+  }, [id]);
 
   if (loading) return <Spinner />;
   if (!p) return <ErrorNote error={error} />;
@@ -719,7 +748,7 @@ export function ProductDetailPage() {
         </div>
       </div>
       <StoreCard />
-      <ProductCommunity product={p} />
+      <ProductCommunity key={p.id} product={p} />
     </article>
   );
 }

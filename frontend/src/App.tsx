@@ -8,11 +8,11 @@ import {
 } from './pages/AccountFeatures';
 import { VariantsPage } from './pages/Variants';
 import { StaffAfterSalesPage } from './components/community';
-import { SearchSuggestions, StoreCard } from './components/shopping';
+import { SearchSuggestions, StoreCard, type SearchSuggestionsHandle } from './components/shopping';
 import { recordSearch } from './lib/browsing';
 import { AddressBookPage } from './pages/Addresses';
 import { StaffOrdersPage } from './pages/StaffOrders';
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState, useRef, type FormEvent } from 'react';
 import { Link, NavLink, Route, Routes, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { House, ListOrdered, LogOut, Menu, Monitor, Moon, Search, ShoppingCart, Sun, User } from 'lucide-react';
 import { API_MODE, resetMockData } from './api';
@@ -85,6 +85,7 @@ function HeaderSearch({ className }: { className?: string }) {
   const q = pathname === '/' ? (params.get('q') ?? '') : '';
   const [draft, setDraft] = useState(q);
   const [focused, setFocused] = useState(false);
+  const suggestions = useRef<SearchSuggestionsHandle>(null);
   useEffect(() => setDraft(q), [q]);
   function submit(e: FormEvent) {
     e.preventDefault();
@@ -108,7 +109,11 @@ function HeaderSearch({ className }: { className?: string }) {
         if (e.key === 'Escape') setFocused(false);
         if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && e.target instanceof HTMLInputElement) {
           e.preventDefault();
-          e.currentTarget.querySelector<HTMLElement>('[aria-label="搜尋建議"]')?.focus();
+          setFocused(true);
+          suggestions.current?.move(e.key === 'ArrowDown' ? 1 : -1);
+        }
+        if (e.key === 'Enter' && e.target instanceof HTMLInputElement && suggestions.current?.chooseActive()) {
+          e.preventDefault();
         }
       }}
       className={cn(
@@ -130,6 +135,7 @@ function HeaderSearch({ className }: { className?: string }) {
       </Button>
       {focused && (
         <SearchSuggestions
+          ref={suggestions}
           value={draft}
           choose={(term) => {
             setDraft(term);

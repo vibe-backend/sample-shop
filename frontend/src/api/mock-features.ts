@@ -108,13 +108,18 @@ export function createMockFeatures(c: FeatureContext): ShopFeatures {
     )
       fail(422, 'VALIDATION_FAILED', '規格鍵值必須符合商品選項');
     if (
-      !Number.isInteger(v.price_cents) ||
+      !Number.isSafeInteger(v.price_cents) ||
       v.price_cents < 0 ||
-      !Number.isInteger(v.stock) ||
+      !Number.isSafeInteger(v.stock) ||
       v.stock < 0 ||
       typeof v.active !== 'boolean'
     )
       fail(422, 'VALIDATION_FAILED', '價格、庫存或啟用狀態無效');
+    if (
+      v.image_url &&
+      (typeof v.image_url !== 'string' || v.image_url.length > 500 || !/^https?:\/\//.test(v.image_url))
+    )
+      fail(422, 'VALIDATION_FAILED', '規格圖片須為 http(s) 網址，上限 500 字');
     if (p.variants?.some((x) => x.id !== ignoreId && p.options!.every((o) => x.options[o.name] === v.options[o.name])))
       fail(409, 'SKU_EXISTS', '此規格組合已存在');
   };
@@ -399,12 +404,9 @@ export function createMockFeatures(c: FeatureContext): ShopFeatures {
             state().orders[s.buyer_id]?.find((o) => o.id === s.order_id) ?? fail(404, 'NOT_FOUND', '找不到訂單');
           o.refunded_cents = (o.refunded_cents ?? 0) + s.amount_cents;
           const w = walletOf(state(), s.buyer_id);
-          const reverse = Math.min(
-            w.balance,
-            Math.floor(
-              ((o.points_earned ?? 0) * s.amount_cents) / Math.max(1, o.total_cents - (o.shipping_cents ?? 0)),
-            ),
-          );
+          const remaining = Math.floor(Math.max(0, o.total_cents - (o.shipping_cents ?? 0) - o.refunded_cents) / 100);
+          const reverse = Math.min(w.balance, Math.max(0, (o.points_earned ?? 0) - remaining));
+          if (o.points_earned !== undefined) o.points_earned = Math.min(o.points_earned, remaining);
           recordPoints(state(), s.buyer_id, -reverse, '退款扣回積分', o.id, stamp());
         }
         s.status = status;

@@ -1,5 +1,5 @@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState, useImperativeHandle, forwardRef, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { api, API_MODE, formatPrice, type Product } from '../api';
@@ -289,82 +289,99 @@ export function CategoryGrid({ selected, onSelect }: { selected: string; onSelec
     </nav>
   );
 }
-export function SearchSuggestions({ value, choose }: { value: string; choose: (term: string) => void }) {
-  const [products] = useAsync(() => api.listProducts({ limit: 100 }), []);
-  const [tick, setTick] = useState(0);
-  const [index, setIndex] = useState(-1);
-  const options = value.trim()
-    ? (products?.items
-        .filter((p) => p.active && p.name.includes(value.trim()))
-        .slice(0, 8)
-        .map((p) => p.name) ?? [])
-    : [...new Set([...searches(), '咖啡', '文具', '家居'])].slice(0, 13);
-  useEffect(() => setIndex(-1), [value]);
-  return (
-    <div
-      data-refresh={tick}
-      tabIndex={0}
-      onFocus={() => {
-        if (index < 0) setIndex(0);
-      }}
-      aria-label="搜尋建議"
-      className="absolute inset-x-0 top-full z-50 mt-1 rounded-xl border bg-card p-2 shadow-lg"
-      onKeyDown={(e) => {
-        if (options.length && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
-          e.preventDefault();
-          setIndex((i) => (i + (e.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length);
-        }
-        if (e.key === 'Enter' && index >= 0) {
-          e.preventDefault();
-          recordSearch(options[index]);
-          choose(options[index]);
-        }
-      }}
-    >
-      <p className="p-1 text-xs text-muted-foreground">{value ? '搜尋建議（方向鍵選擇）' : '最近搜尋及熱門詞'}</p>
-      {options.map((s, i) => (
-        <div key={s} className={`flex rounded ${i === index ? 'bg-muted' : ''}`}>
-          <button
-            type="button"
-            className="flex-1 p-2 text-left text-sm hover:bg-muted"
-            onClick={() => {
-              recordSearch(s);
-              choose(s);
-            }}
-          >
-            {s}
-          </button>
-          {!value && searches().includes(s) && (
+export interface SearchSuggestionsHandle {
+  move(direction: number): void;
+  chooseActive(): boolean;
+}
+export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, { value: string; choose: (term: string) => void }>(
+  function SearchSuggestions({ value, choose }, ref) {
+    const [products] = useAsync(() => api.listProducts({ limit: 100 }), []);
+    const [tick, setTick] = useState(0);
+    const [index, setIndex] = useState(-1);
+    const options = value.trim()
+      ? [
+          ...new Set(products?.items.filter((p) => p.active && p.name.includes(value.trim())).map((p) => p.name) ?? []),
+        ].slice(0, 8)
+      : [...new Set([...searches(), '咖啡', '文具', '家居'])].slice(0, 13);
+    useEffect(() => setIndex(-1), [value, tick]);
+    const move = (direction: number) =>
+      setIndex((i) =>
+        !options.length
+          ? -1
+          : i < 0
+            ? direction > 0
+              ? 0
+              : options.length - 1
+            : (i + direction + options.length) % options.length,
+      );
+    function select(term: string) {
+      recordSearch(term);
+      choose(term);
+    }
+    useImperativeHandle(ref, () => ({
+      move,
+      chooseActive: () => {
+        if (!options[index]) return false;
+        select(options[index]);
+        return true;
+      },
+    }));
+    return (
+      <div
+        data-refresh={tick}
+        aria-label="搜尋建議"
+        className="absolute inset-x-0 top-full z-50 mt-1 rounded-xl border bg-card p-2 shadow-lg"
+        onKeyDown={(e) => {
+          if (options.length && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+            e.preventDefault();
+            e.stopPropagation();
+            move(e.key === 'ArrowDown' ? 1 : -1);
+          }
+        }}
+      >
+        <p className="p-1 text-xs text-muted-foreground">{value ? '搜尋建議（方向鍵選擇）' : '最近搜尋及熱門詞'}</p>
+        {options.map((term, i) => (
+          <div key={term} className={`flex rounded ${i === index ? 'bg-muted' : ''}`}>
             <button
               type="button"
-              aria-label={`刪除搜尋 ${s}`}
-              className="px-2"
-              onClick={() => {
-                removeSearch(s);
-                setTick((t) => t + 1);
-              }}
+              aria-pressed={i === index}
+              className="flex-1 p-2 text-left text-sm hover:bg-muted"
+              onClick={() => select(term)}
             >
-              ×
+              {term}
             </button>
-          )}
-        </div>
-      ))}
-      {!value && (
-        <Button
-          type="button"
-          size="sm"
-          variant="link"
-          onClick={() => {
-            removeSearch();
-            setTick((t) => t + 1);
-          }}
-        >
-          清除搜尋紀錄
-        </Button>
-      )}
-    </div>
-  );
-}
+            {!value && searches().includes(term) && (
+              <button
+                type="button"
+                aria-label={`刪除搜尋 ${term}`}
+                className="px-2"
+                onClick={() => {
+                  removeSearch(term);
+                  setTick((t) => t + 1);
+                }}
+              >
+                ×
+              </button>
+            )}
+          </div>
+        ))}
+        {!value && (
+          <Button
+            type="button"
+            size="sm"
+            variant="link"
+            onClick={() => {
+              removeSearch();
+              setTick((t) => t + 1);
+            }}
+          >
+            清除搜尋紀錄
+          </Button>
+        )}
+      </div>
+    );
+  },
+);
 export function ImageSearch() {
   const nav = useNavigate();
   const [error, setError] = useState('');

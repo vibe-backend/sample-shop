@@ -228,6 +228,7 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
       const v = it.sku_id ? p.variants?.find((v) => v.id === it.sku_id) : undefined;
       const target = v ?? p;
       target.reserved_stock = Math.max(0, (target.reserved_stock ?? 0) - it.quantity);
+      if (v) v.version = (v.version ?? 1) + 1;
     }
   }
   /** #34 state machine; illegal moves → 409 INVALID_TRANSITION. */
@@ -268,6 +269,7 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
       p.sold_count = Math.max(0, (p.sold_count ?? 0) - it.quantity);
       const v = it.sku_id ? p.variants?.find((x) => x.id === it.sku_id) : undefined;
       if (v) {
+        if (o.paid_at) v.version = (v.version ?? 1) + 1;
         v.stock += it.quantity;
         v.in_stock = v.stock > 0;
         syncVariantTotals(p);
@@ -436,13 +438,15 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
   function validateProduct(p: Partial<Product>) {
     if (
       p.options &&
-      (p.options.length > 8 ||
+      (p.options.length > 3 ||
         new Set(p.options.map((o) => o.name)).size !== p.options.length ||
         p.options.some(
           (o) =>
             !o.name.trim() ||
+            o.name.length > 20 ||
+            o.values.length > 20 ||
             !o.values.length ||
-            o.values.some((v) => !v.trim()) ||
+            o.values.some((v) => !v.trim() || v.length > 20) ||
             new Set(o.values).size !== o.values.length,
         ))
     )
@@ -533,6 +537,11 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
         return paginate(list.map(publicProduct), q.cursor, q.limit);
       }),
     getProduct: (pid) => run(() => publicProduct(findProduct(pid))),
+    getStaffProduct: (pid) =>
+      run(() => {
+        requireStaff();
+        return publicProduct(findProduct(pid, true));
+      }),
     getCart: () => run(() => cartOf(cartUserId())),
     addCartItem: (pid, quantity, skuId) =>
       run(() => {
@@ -666,6 +675,7 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
           const v = skuOf(p, it.sku?.id);
           const target = v ?? p;
           target.reserved_stock = (target.reserved_stock ?? 0) + it.quantity;
+          if (v) v.version = (v.version ?? 1) + 1;
           if (!v && campaignActive(p, now())) p.campaign!.sold += it.quantity;
           p.sold_count = (p.sold_count ?? 0) + it.quantity; // §12 @a3d4304
           if (v) {
@@ -768,15 +778,17 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
       run(() => {
         if (!reason.trim() || reason.length > 200) throw err(422, 'VALIDATION_FAILED', '請選擇取消原因');
         const o = ownOrder(oid);
-        o.cancellation_reason = reason.trim();
         transition(o, 'cancelled', 'buyer');
+        o.cancellation_reason = reason.trim();
         restock(o, currentUser().id);
         return o;
       }),
     confirmDelivery: (oid) =>
       run(() => {
         const o = transition(ownOrder(oid), 'delivered', 'buyer');
-        o.points_earned = Math.floor(Math.max(0, o.total_cents - (o.shipping_cents ?? 0)) / 100);
+        o.points_earned = Math.floor(
+          Math.max(0, o.total_cents - (o.shipping_cents ?? 0) - (o.refunded_cents ?? 0)) / 100,
+        );
         recordPoints(state, currentUser().id, o.points_earned, '完成訂單獲得積分', o.id, new Date(now()).toISOString());
         o.shipment?.events.push({ at: new Date(now()).toISOString(), description: '買家已確認收貨' });
         return o;

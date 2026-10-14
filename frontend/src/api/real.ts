@@ -11,6 +11,7 @@ import {
   type Product,
   type ProductInput,
   type ProductQuery,
+  type ProductVariant,
   type ShopApi,
   type ShopFeatures,
 } from './types';
@@ -57,6 +58,7 @@ export function createRealApi(baseUrl: string, slug: string): ShopApi {
       const ra = Number(res.headers.get('Retry-After'));
       throw new ApiRequestError(res.status, code, message, Number.isFinite(ra) && ra > 0 ? ra : undefined);
     }
+    if (data && typeof data === 'object' && res.headers.get('ETag')) data.etag = res.headers.get('ETag');
     return data as T;
   }
 
@@ -114,9 +116,16 @@ export function createRealApi(baseUrl: string, slug: string): ShopApi {
     createAfterSale: unsupported,
     decideAfterSale: unsupported,
     submitReturnShipment: unsupported,
-    listVariants: unsupported,
-    createVariant: unsupported,
-    updateVariant: unsupported,
+    listVariants: (pid) =>
+      req<ProductVariant[]>(
+        'GET',
+        `/catalog/v1/${encodeURIComponent(slug)}/staff/products/${encodeURIComponent(pid)}/variants`,
+      ),
+    createVariant: (pid, input) => req<ProductVariant>('POST', `${cat}/${encodeURIComponent(pid)}/variants`, input),
+    updateVariant: (pid, sid, input, version) =>
+      req<ProductVariant>('PUT', `${cat}/${encodeURIComponent(pid)}/variants/${encodeURIComponent(sid)}`, input, {
+        'If-Match': `"${version}"`,
+      }),
   };
   return {
     ...features,
@@ -150,6 +159,8 @@ export function createRealApi(baseUrl: string, slug: string): ShopApi {
       );
     },
     getProduct: (id) => req<Product>('GET', `${cat}/${encodeURIComponent(id)}`),
+    getStaffProduct: (id) =>
+      req<Product>('GET', `/catalog/v1/${encodeURIComponent(slug)}/staff/products/${encodeURIComponent(id)}`),
     getCart: () => req<Cart>('GET', '/shop/v1/cart-items'),
     addCartItem: (product_id, quantity, sku_id) =>
       req<Cart>('POST', '/shop/v1/cart-items', sku_id ? { product_id, sku_id, quantity } : { product_id, quantity }),
@@ -168,7 +179,8 @@ export function createRealApi(baseUrl: string, slug: string): ShopApi {
       withRetry(() =>
         req<Order>('POST', `/shop/v1/orders/${encodeURIComponent(id)}/payments`, p, { 'Idempotency-Key': key }),
       ),
-    cancelOrder: (id) => req<Order>('POST', `/shop/v1/orders/${encodeURIComponent(id)}/cancel`, {}),
+    cancelOrder: (id, reason) =>
+      req<Order>('POST', `/shop/v1/orders/${encodeURIComponent(id)}/cancel`, reason ? { reason } : {}),
     confirmDelivery: (id) => req<Order>('POST', `/shop/v1/orders/${encodeURIComponent(id)}/confirm-delivery`, {}),
     listStaffOrders: (q: { status?: OrderStatus; cursor?: string } = {}) =>
       req<Page<StaffOrder>>('GET', '/shop/v1/staff/orders' + qs(q)),
@@ -182,7 +194,11 @@ export function createRealApi(baseUrl: string, slug: string): ShopApi {
     deleteAddress: (id) => req<void>('DELETE', `/shop/v1/addresses/${encodeURIComponent(id)}`),
     setDefaultAddress: (id) => req<Address>('POST', `/shop/v1/addresses/${encodeURIComponent(id)}/default`, {}),
     createProduct: (p: ProductInput) => req<Product>('POST', cat, p),
-    updateProduct: (id, p) => req<Product>('PUT', `${cat}/${encodeURIComponent(id)}`, p),
+    updateProduct: (id, p, etag) => {
+      if (!etag)
+        return Promise.reject(new ApiRequestError(428, 'PRECONDITION_REQUIRED', '缺少商品版本，請重新載入後再修改'));
+      return req<Product>('PUT', `${cat}/${encodeURIComponent(id)}`, p, { 'If-Match': etag });
+    },
     deleteProduct: (id) => req<void>('DELETE', `${cat}/${encodeURIComponent(id)}`),
   };
 }

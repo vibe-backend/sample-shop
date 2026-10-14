@@ -58,3 +58,14 @@ VITE_API_MODE=real npm run build
 
 API tests cover guest merge, buy-now isolation, selected checkout, totals, coupon reuse/expiry, reservation/pay/cancel races, credential migration, review ownership, return transitions and SKU optimistic versions.
 UI tests cover buy-now and selected checkout through order placement, gallery switching, category routing and the inherited address/payment/status screens.
+
+## Follow-up acceptance audit
+
+The draft now includes explicit previous/next banner controls, arrow-key search selection while focus stays in the search input, category-route filter clearing, and independent product review state when navigating between products.
+Cart initialization waits for authentication so the selected lines cannot reset during login bootstrap.
+Rejected cancellation preserves the existing order reason. Delivery points exclude prior refunds, and successive item refunds reverse the full remaining points balance without losing rounding.
+Staff SKU versions advance when checkout reserves or commits stock; stale inventory edits fail instead of restoring already-reserved availability.
+The real product editor reads inactive products from the staff endpoint and sends the exact response ETag in If-Match. Dedicated SKU routes are now wired to the backend follow-up contract. These HTTP routes still require a compiled backend.
+
+Validation: 136 frontend tests, ESLint/TypeScript, mock and real production builds. Backend follow-up adds PostgreSQL migrations and eight SQL/concurrency tests; SDK HTTP/RLS and deployed scheduling remain pending.
+The frontend draft addresses the demo acceptance criteria for #7–#58 (excluding the previously completed #17). Backend-specific #61/#66 stay open for compiled and deployed verification.

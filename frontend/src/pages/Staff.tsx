@@ -185,11 +185,12 @@ export function StaffEditPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [skuCount, setSkuCount] = useState(0);
+  const [etag, setEtag] = useState<string | undefined>();
 
   useEffect(() => {
     if (!id) return;
     api
-      .getProduct(id)
+      .getStaffProduct(id)
       .then((p) => {
         setF({
           slug: p.slug,
@@ -204,7 +205,8 @@ export function StaffEditPage() {
         });
         setOptionsText(p.options?.map((o) => `${o.name}:${o.values.join(',')}`).join('\n') ?? '');
         setPrice((p.price_cents / 100).toString());
-        setSkuCount(p.variants?.length ?? 0);
+        setSkuCount(p.options?.length ? Math.max(1, p.variants?.length ?? 0) : 0);
+        setEtag(p.etag);
         setImageText(p.image_urls.filter((u) => !u.startsWith('data:')).join('\n'));
       })
       .catch(setError)
@@ -241,7 +243,7 @@ export function StaffEditPage() {
     void _s;
     const body = skuCount ? rest : full;
     try {
-      if (id) await api.updateProduct(id, body);
+      if (id) await api.updateProduct(id, body, etag);
       else await api.createProduct(full);
       nav('/staff/products');
     } catch (err) {

@@ -8,7 +8,7 @@ import { BackLink } from './Products';
 
 export function VariantsPage() {
   const { id = '' } = useParams();
-  const [product, pError, pLoading] = useAsync(() => api.getProduct(id), [id]);
+  const [product, pError, pLoading] = useAsync(() => api.getStaffProduct(id), [id]);
   const [variants, error, loading, reload] = useAsync(() => api.listVariants(id), [id]);
   const [editing, setEditing] = useState<ProductVariant | null>(null);
   const [form, setForm] = useState<VariantInput>({

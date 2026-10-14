@@ -332,7 +332,8 @@ describe('after-sales and SKU permissions', () => {
     const o = await api.createOrder('sku', address);
     await staff();
     await code(api.updateProduct('p_001', { options: [{ name: '顏色', values: ['墨黑'] }] }), 'OPTIONS_IN_USE');
-    await api.updateVariant('p_001', 'p_001_sku1', { price_cents: 99999 }, 1);
+    const version = (await api.listVariants('p_001')).find((v) => v.id === 'p_001_sku1')!.version!;
+    await api.updateVariant('p_001', 'p_001_sku1', { price_cents: 99999 }, version);
     await customer();
     expect((await api.getOrder(o.id)).items[0].unit_price_cents).toBe(18800);
   });
@@ -368,4 +369,71 @@ it('migrates persisted plaintext credentials without storing passwords or sessio
   } finally {
     Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: previous });
   }
+});
+
+it('excludes refunds made before delivery from earned points', async () => {
+  await customer();
+  const o = await order();
+  await api.payOrder(o.id, { method: 'mock_card', simulate: 'success' }, 'refund-before-delivery');
+  const service = await api.createAfterSale({
+    order_id: o.id,
+    item_index: 0,
+    type: 'refund',
+    reason: '商品問題',
+    description: '',
+    images: [],
+  });
+  await staff();
+  await api.decideAfterSale(service.id, 'approved', '同意');
+  await api.decideAfterSale(service.id, 'refunded', '退款');
+  await api.updateStaffOrderStatus(o.id, 'shipped');
+  await customer();
+  await api.confirmDelivery(o.id);
+  expect((await api.wallet()).balance).toBe(0);
+});
+it('keeps the cancellation reason unchanged after a rejected transition', async () => {
+  const o = await delivered();
+  await code(api.cancelOrder(o.id, '誤選'), 'INVALID_TRANSITION');
+  expect((await api.getOrder(o.id)).cancellation_reason).toBeUndefined();
+});
+it('reverses all awarded points across separately rounded line refunds', async () => {
+  await customer();
+  await api.addCartItem('p_007', 1);
+  await api.addCartItem('p_010', 1);
+  const o = await api.createOrder('two-refunds', address);
+  await api.payOrder(o.id, { method: 'mock_card', simulate: 'success' }, 'two-refunds-pay');
+  await staff();
+  await api.updateStaffOrderStatus(o.id, 'shipped');
+  await customer();
+  await api.confirmDelivery(o.id);
+  const services = [];
+  for (let item_index = 0; item_index < 2; item_index++)
+    services.push(
+      await api.createAfterSale({
+        order_id: o.id,
+        item_index,
+        type: 'refund',
+        reason: '商品問題',
+        description: '',
+        images: [],
+      }),
+    );
+  await staff();
+  for (const s of services) {
+    await api.decideAfterSale(s.id, 'approved', '同意');
+    await api.decideAfterSale(s.id, 'refunded', '退款');
+  }
+  await customer();
+  expect((await api.wallet()).balance).toBe(0);
+  expect((await api.getOrder(o.id)).refunded_cents).toBe(o.total_cents);
+});
+
+it('invalidates a staff SKU version when checkout reserves its inventory', async () => {
+  await staff();
+  const old = (await api.listVariants('p_001'))[0];
+  await customer();
+  await api.addCartItem('p_001', 1, old.id);
+  await api.createOrder('sku-version', address);
+  await staff();
+  await code(api.updateVariant('p_001', old.id, { stock: old.stock }, old.version ?? 1), 'PRECONDITION_FAILED');
 });
