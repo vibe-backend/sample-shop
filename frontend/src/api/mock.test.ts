@@ -146,10 +146,26 @@ describe('cart and orders', () => {
     expect(p.stock).toBe(13);
   });
 
-  it('places an order without an Idempotency-Key', async () => {
+  it('requires an Idempotency-Key (CONTRACT.md §10 @47bc45e)', async () => {
     await api.addCartItem('p_007', 1);
-    const o = await api.createOrder(undefined as unknown as string); // server-side tolerance only
-    expect(o.total_cents).toBe(42000);
+    await expectCode(api.createOrder(undefined as unknown as string), 400, 'IDEMPOTENCY_KEY_REQUIRED');
+    expect((await api.getCart()).items).toHaveLength(1); // failed attempt changes nothing
+  });
+
+  it('rejects reusing a key with a different body (409 IDEMPOTENCY_KEY_REUSED)', async () => {
+    await api.addCartItem('p_007', 1);
+    const o = await api.createOrder('k1', {});
+    expect((await api.createOrder('k1', {})).id).toBe(o.id);
+    await expectCode(api.createOrder('k1', { note: 'x' }), 409, 'IDEMPOTENCY_KEY_REUSED');
+  });
+
+  it('rejects ordering when a cart line became unavailable and flags it in the cart', async () => {
+    await api.addCartItem('p_003', 1, 'p_003_sku1');
+    await api.addCartItem('p_007', 1);
+    api.state.products.find((x) => x.id === 'p_003')!.variants = [];
+    await expectCode(api.createOrder('k-u'), 409, 'PRODUCT_UNAVAILABLE');
+    const cart = await api.getCart();
+    expect(cart.items.map((i) => i.product.in_stock)).toEqual([false, true]);
   });
 
   it('restricts the staff product list to staff', async () => {
@@ -206,7 +222,7 @@ describe('SKU contract rules (CONTRACT.md @dd5bf0b §9)', () => {
     syncVariantTotals(p);
     expect((await api.getProduct('p_001')).in_stock).toBe(false);
     await loginAs('demo@example.com', 'demo1234');
-    await expectCode(api.addCartItem('p_001', 1), 422, 'SKU_REQUIRED');
+    await expectCode(api.addCartItem('p_001', 1), 409, 'PRODUCT_UNAVAILABLE');
   });
   it('counts zero-stock variants toward the minimum price', () => {
     const tote = seedProducts().find((x) => x.slug === 'linen-tote')!;

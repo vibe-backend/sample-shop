@@ -26,6 +26,8 @@ export interface MockState {
   carts: Record<string, StoredCartLine[]>;
   orders: Record<string, Order[]>;
   idempotency: Record<string, string>;
+  /** Normalised body per idempotency key (CONTRACT.md §10). */
+  idempotency_body?: Record<string, string>;
   sessions: Record<string, { user_id: string; expires_at: string }>;
   seq: number;
 }
@@ -138,13 +140,21 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
     if (!p || (!p.active && !includeInactive)) throw err(404, 'NOT_FOUND', '找不到商品');
     return p;
   }
+  /** CONTRACT.md §11: product inactive/deleted, SKU gone, or every variant inactive. */
+  function isUnavailable(l: StoredCartLine): boolean {
+    const p = state.products.find((x) => x.id === l.product_id);
+    if (!p || !p.active) return true;
+    if (p.options?.length && !p.variants?.length) return true;
+    return !!l.sku_id && !p.variants?.some((x) => x.id === l.sku_id);
+  }
   function cartOf(uid: string): Cart {
     const lines = state.carts[uid] ?? [];
     const items = lines.flatMap((l) => {
       const p = state.products.find((x) => x.id === l.product_id);
       if (!p) return [];
       const v = l.sku_id ? p.variants?.find((x) => x.id === l.sku_id) : undefined;
-      if (l.sku_id && !v) return [];
+      // Lines stay visible when their SKU disappeared or the product went inactive, flagged in_stock: false.
+      const usable = !isUnavailable(l);
       const price = v?.price_cents ?? p.price_cents;
       return [
         {
@@ -152,7 +162,7 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
           quantity: l.quantity,
           line_total_cents: lineTotal(price, l.quantity),
           sku: v ? { id: v.id, options: v.options } : null,
-          product: { id: p.id, slug: p.slug, name: p.name, price_cents: price, currency: p.currency, image_url: v?.image_url ?? p.image_urls[0] ?? null, in_stock: v ? v.in_stock : p.in_stock },
+          product: { id: p.id, slug: p.slug, name: p.name, price_cents: price, currency: p.currency, image_url: v?.image_url ?? p.image_urls[0] ?? null, in_stock: usable && (v ? v.in_stock : p.in_stock) },
         },
       ];
     });
@@ -162,7 +172,7 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
     if (!Number.isInteger(q) || q < 1 || q > MAX_QTY) throw err(422, 'VALIDATION_ERROR', `數量必須介乎 1 至 ${MAX_QTY}`);
   }
   function checkStock(p: Product, q: number, v?: ProductVariant | null) {
-    if (!p.active) throw err(409, 'PRODUCT_INACTIVE', `「${p.name}」已下架`);
+    if (!p.active || (p.options?.length && !p.variants?.length)) throw err(409, 'PRODUCT_UNAVAILABLE', `「${p.name}」已無法購買`);
     const stock = v ? v.stock : p.stock;
     const label = v ? `「${p.name}」（${Object.values(v.options).join('／')}）` : `「${p.name}」`;
     if (stock < q) throw err(409, 'OUT_OF_STOCK', stock === 0 ? `${label}已售完` : `${label}庫存只剩 ${stock} 件`);
@@ -173,6 +183,8 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
       if (skuId) throw err(404, 'SKU_NOT_FOUND', '找不到此規格');
       return null;
     }
+    // CONTRACT.md §11 @47bc45e: all variants inactive → variants [] → 409 PRODUCT_UNAVAILABLE.
+    if (!p.variants?.length) throw err(409, 'PRODUCT_UNAVAILABLE', `「${p.name}」已無法購買`);
     if (!skuId) throw err(422, 'SKU_REQUIRED', '請先選擇商品規格');
     const v = (p.variants ?? []).find((x) => x.id === skuId);
     if (!v) throw err(404, 'SKU_NOT_FOUND', '找不到此規格');
@@ -278,16 +290,22 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
         state.carts[u.id] = lines.filter((l) => l.id !== itemId);
         return cartOf(u.id);
       }),
-    createOrder: (key) =>
+    createOrder: (key, body = {}) =>
       run(() => {
         const u = currentUser();
-        // Server side tolerates a missing key: branch backend/markdown-v1 @dd5bf0b, backend/CONTRACT.md
-        // §2 端點一覽 #14 (see also §4b: retries reuse the same key) says `Idempotency-Key`（建議必帶）, i.e. recommended, not required.
-        // Our client (types.ts / real.ts) always sends one.
-        const prev = key ? state.idempotency[`${u.id}:${key}`] : undefined;
-        if (prev) return (state.orders[u.id] ?? []).find((o) => o.id === prev)!;
+        // CONTRACT.md §10 @47bc45e (branch backend/markdown-v1): key required; same key + same body replays
+        // the original order; different body → 409; failed attempts don't retain the key.
+        if (!key) throw err(400, 'IDEMPOTENCY_KEY_REQUIRED', '缺少 Idempotency-Key');
+        const ik = `${u.id}:${key}`;
+        const bodyHash = JSON.stringify(body, Object.keys(body).sort());
+        const prev = state.idempotency[ik];
+        if (prev) {
+          if ((state.idempotency_body?.[ik] ?? '{}') !== bodyHash) throw err(409, 'IDEMPOTENCY_KEY_REUSED', '此 Idempotency-Key 已用於另一個請求');
+          return (state.orders[u.id] ?? []).find((o) => o.id === prev)!;
+        }
         const cart = cartOf(u.id);
         if (!cart.items.length) throw err(422, 'CART_EMPTY', '購物車是空的');
+        if ((state.carts[u.id] ?? []).some(isUnavailable)) throw err(409, 'PRODUCT_UNAVAILABLE', '部分商品已無法購買');
         for (const it of cart.items) {
           const p = findProduct(it.product.id, true);
           checkStock(p, it.quantity, skuOf(p, it.sku?.id));
@@ -313,7 +331,8 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
           created_at: new Date(now()).toISOString(),
         };
         (state.orders[u.id] ??= []).unshift(order);
-        if (key) state.idempotency[`${u.id}:${key}`] = order.id;
+        state.idempotency[ik] = order.id;
+        (state.idempotency_body ??= {})[ik] = bodyHash;
         state.carts[u.id] = [];
         return order;
       }),

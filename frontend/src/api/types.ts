@@ -13,6 +13,8 @@ export class ApiRequestError extends Error implements ApiError {
     public status: number,
     public code: string,
     message: string,
+    /** Seconds from a Retry-After header, when the server sent one. */
+    public retryAfter?: number,
   ) {
     super(message);
     this.name = 'ApiRequestError';
@@ -157,6 +159,9 @@ export interface Order {
   created_at: string;
 }
 
+/** POST /shop/v1/orders body; `{}` for now. */
+export type CreateOrderInput = Record<string, unknown>;
+
 export interface ShopApi {
   login(c: Credentials): Promise<AuthToken>;
   register(r: RegisterInput): Promise<AuthToken>;
@@ -169,8 +174,11 @@ export interface ShopApi {
   addCartItem(productId: string, quantity: number, skuId?: string | null): Promise<Cart>;
   updateCartItem(itemId: string, quantity: number): Promise<Cart>;
   removeCartItem(itemId: string): Promise<Cart>;
-  /** The client always generates and sends an Idempotency-Key. */
-  createOrder(idempotencyKey: string): Promise<Order>;
+  /**
+   * Idempotency-Key is required (CONTRACT.md §10 @47bc45e, backend/markdown-v1). Same key + same
+   * body replays the original order; same key + different body → 409 IDEMPOTENCY_KEY_REUSED.
+   */
+  createOrder(idempotencyKey: string, body?: CreateOrderInput): Promise<Order>;
   listOrders(cursor?: string): Promise<Page<Order>>;
   getOrder(id: string): Promise<Order>;
   createProduct(p: ProductInput): Promise<Product>;
