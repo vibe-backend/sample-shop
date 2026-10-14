@@ -231,8 +231,12 @@ export function CheckoutPage() {
               <Link to="/cart">前往購物車移除無法購買的商品</Link>
             </Button>
           )}
-          {!addressId && <p className="text-sm text-destructive">請先新增收貨地址</p>}
-          <Button size="lg" className="h-10" onClick={place} disabled={busy || !addressId}>
+          {!addressId && (
+            <p id="need-address" className="text-sm text-destructive">
+              請先新增收貨地址
+            </p>
+          )}
+          <Button size="lg" className="h-10" onClick={place} disabled={busy || !addressId} aria-describedby={addressId ? undefined : 'need-address'}>
             {busy ? '處理中…' : '確認下單'}
           </Button>
           <Button variant="link" asChild>

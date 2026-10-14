@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import App from './App';
@@ -59,5 +59,31 @@ describe('checkout delivery address (#29)', () => {
     expect(document.getElementById('addr-region-err')?.textContent).toBe('請選擇地區');
     expect(screen.getByText('請輸入詳細地址')).toBeTruthy();
     expect(screen.queryByText('請輸入收件人')).toBeNull(); // prefilled with display name
+  }, 20000);
+});
+
+describe('address radiogroup keyboard (#29 a11y)', () => {
+  it('uses roving tabindex and arrow keys', async () => {
+    tokenStore.set(await api.login({ email: 'demo@example.com', password: 'demo1234' }));
+    await api.addCartItem('p_007', 1);
+    renderAt('/checkout');
+    const group = await screen.findByRole('radiogroup', { name: '收貨地址' }, { timeout: 5000 });
+    const [home, office] = within(group).getAllByRole('radio');
+    expect([home.tabIndex, office.tabIndex]).toEqual([0, -1]);
+    fireEvent.keyDown(home, { key: 'ArrowDown' });
+    expect(office.getAttribute('aria-checked')).toBe('true');
+    expect([home.tabIndex, office.tabIndex]).toEqual([-1, 0]);
+    expect(document.activeElement).toBe(office);
+    fireEvent.keyDown(office, { key: 'Home' });
+    expect(home.getAttribute('aria-checked')).toBe('true');
+  }, 20000);
+
+  it('links the missing-address hint to the order button', async () => {
+    tokenStore.set(await api.register({ email: `m${Date.now()}@example.com`, password: 'secret123', display_name: '新客' }));
+    await api.addCartItem('p_007', 1);
+    renderAt('/checkout');
+    const btn = await screen.findByRole('button', { name: '確認下單' }, { timeout: 5000 });
+    expect(btn.getAttribute('aria-describedby')).toBe('need-address');
+    expect(document.getElementById('need-address')?.textContent).toBe('請先新增收貨地址');
   }, 20000);
 });

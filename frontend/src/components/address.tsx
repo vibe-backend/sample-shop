@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { HK_REGIONS, formatAddress, validateAddress, type AddressErrors } from '@/lib/address';
+import { rovingRadio } from '@/lib/roving';
 import { cn } from '@/lib/utils';
 
 /** Read-only address block (checkout choice, order snapshot). */
@@ -26,9 +27,10 @@ export function AddressLines({ a }: { a: AddressSnapshot }) {
 
 /** Selectable list of saved addresses (role=radiogroup). */
 export function AddressPicker({ addresses, value, onChange }: { addresses: Address[]; value: string | null; onChange: (id: string) => void }) {
+  const roving = rovingRadio(addresses.map((a) => a.id), value, onChange);
   return (
-    <div role="radiogroup" aria-label="收貨地址" className="grid gap-2">
-      {addresses.map((a) => {
+    <div role="radiogroup" aria-label="收貨地址" className="grid gap-2" onKeyDown={roving.onKeyDown}>
+      {addresses.map((a, i) => {
         const on = a.id === value;
         return (
           <button
@@ -36,6 +38,7 @@ export function AddressPicker({ addresses, value, onChange }: { addresses: Addre
             type="button"
             role="radio"
             aria-checked={on}
+            tabIndex={roving.tabIndex(i)}
             onClick={() => onChange(a.id)}
             className={cn(
               'flex items-start gap-3 rounded-lg border p-3 text-left transition-colors focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none',

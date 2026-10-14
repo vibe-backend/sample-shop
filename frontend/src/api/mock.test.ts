@@ -149,7 +149,7 @@ describe('cart and orders', () => {
 
   it('requires an Idempotency-Key (CONTRACT.md §10 @47bc45e)', async () => {
     await api.addCartItem('p_007', 1);
-    await expectCode(api.createOrder(undefined as unknown as string), 400, 'IDEMPOTENCY_KEY_REQUIRED');
+    await expectCode(api.createOrder(undefined as unknown as string, A), 400, 'IDEMPOTENCY_KEY_REQUIRED');
     expect((await api.getCart()).items).toHaveLength(1); // failed attempt changes nothing
   });
 
@@ -242,7 +242,7 @@ describe('delivery addresses (#29)', () => {
   });
   it('requires an address to order (422 ADDRESS_REQUIRED / 404 ADDRESS_NOT_FOUND)', async () => {
     await api.addCartItem('p_007', 1);
-    await expectCode(api.createOrder('a1'), 422, 'ADDRESS_REQUIRED');
+    await expectCode(api.createOrder('a1', {} as never), 422, 'ADDRESS_REQUIRED');
     await expectCode(api.createOrder('a2', { address_id: 'nope' }), 404, 'ADDRESS_NOT_FOUND');
   });
   it('snapshots the address on the order; later address changes do not affect it', async () => {
@@ -255,7 +255,7 @@ describe('delivery addresses (#29)', () => {
   it('validates and normalises new addresses; first address becomes default', async () => {
     await api.register({ email: 'new@example.com', password: 'secret123', display_name: '新用戶' }).then((t) => (token = t.access_token));
     expect(await api.listAddresses()).toEqual([]);
-    await expectCode(api.createAddress({ recipient: '', phone: '123', region: '火星', line1: 'x' }), 422, 'VALIDATION_ERROR');
+    await expectCode(api.createAddress({ recipient: '', phone: '123', region: '火星', line1: 'x' }), 422, 'VALIDATION_FAILED');
     const a = await api.createAddress({ recipient: '新用戶', phone: '+852 6123-4567', region: '新界', line1: '沙田正街 1 號' });
     expect(a).toMatchObject({ phone: '61234567', is_default: true });
     const b = await api.createAddress({ recipient: '新用戶', phone: '61234567', region: '九龍', line1: '尖沙咀廣東道 5 號', is_default: true });

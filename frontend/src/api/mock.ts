@@ -115,7 +115,8 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
     if (opts.persist) globalThis.localStorage?.setItem(STORAGE_KEY, JSON.stringify({ ...state, sessions: {} }));
   }
   const addressesOf = (uid: string) => ((state.addresses ??= {})[uid] ??= []);
-  const sortAddresses = (xs: Address[]) => [...xs].sort((a, b) => Number(b.is_default) - Number(a.is_default));
+  // §12 @aec9631: default first, then newest first.
+  const sortAddresses = (xs: Address[]) => [...xs].sort((a, b) => Number(b.is_default) - Number(a.is_default) || b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id));
   const id = (prefix: string) => `${prefix}_${(++state.seq).toString(36)}`;
 
   async function run<T>(fn: () => T): Promise<T> {
@@ -185,7 +186,7 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
     return { items, subtotal_cents: subtotal(items) };
   }
   function checkQty(q: number) {
-    if (!Number.isInteger(q) || q < 1 || q > MAX_QTY) throw err(422, 'VALIDATION_ERROR', `數量必須介乎 1 至 ${MAX_QTY}`);
+    if (!Number.isInteger(q) || q < 1 || q > MAX_QTY) throw err(422, 'VALIDATION_FAILED', `數量必須介乎 1 至 ${MAX_QTY}`);
   }
   function checkStock(p: Product, q: number, v?: ProductVariant | null) {
     if (!p.active || (p.options?.length && !p.variants?.length)) throw err(409, 'PRODUCT_UNAVAILABLE', `「${p.name}」已無法購買`);
@@ -214,10 +215,10 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
     return { items: all.slice(start, end), next_cursor: end < all.length ? btoa(String(end)) : null };
   }
   function validateProduct(p: Partial<Product>) {
-    if (p.name !== undefined && !p.name.trim()) throw err(422, 'VALIDATION_ERROR', '請輸入商品名稱');
-    if (p.slug !== undefined && !/^[a-z0-9-]+$/.test(p.slug)) throw err(422, 'VALIDATION_ERROR', 'slug 只可包含小寫英文、數字及連字號');
-    if (p.price_cents !== undefined && (!Number.isInteger(p.price_cents) || p.price_cents < 0)) throw err(422, 'VALIDATION_ERROR', '價格必須是非負整數');
-    if (p.stock !== undefined && (!Number.isInteger(p.stock) || p.stock < 0)) throw err(422, 'VALIDATION_ERROR', '庫存必須是非負整數');
+    if (p.name !== undefined && !p.name.trim()) throw err(422, 'VALIDATION_FAILED', '請輸入商品名稱');
+    if (p.slug !== undefined && !/^[a-z0-9-]+$/.test(p.slug)) throw err(422, 'VALIDATION_FAILED', 'slug 只可包含小寫英文、數字及連字號');
+    if (p.price_cents !== undefined && (!Number.isInteger(p.price_cents) || p.price_cents < 0)) throw err(422, 'VALIDATION_FAILED', '價格必須是非負整數');
+    if (p.stock !== undefined && (!Number.isInteger(p.stock) || p.stock < 0)) throw err(422, 'VALIDATION_FAILED', '庫存必須是非負整數');
   }
 
   const api: ShopApi = {
@@ -230,9 +231,9 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
     register: ({ email, password, display_name }) =>
       run(() => {
         const e = email.trim().toLowerCase();
-        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) throw err(422, 'VALIDATION_ERROR', '電郵格式不正確');
+        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) throw err(422, 'VALIDATION_FAILED', '電郵格式不正確');
         if (password.length < 8) throw err(422, 'WEAK_PASSWORD', '密碼最少 8 個字元');
-        if (!display_name.trim()) throw err(422, 'VALIDATION_ERROR', '請輸入顯示名稱');
+        if (!display_name.trim()) throw err(422, 'VALIDATION_FAILED', '請輸入顯示名稱');
         if (state.users.some((x) => x.email === e)) throw err(409, 'EMAIL_TAKEN', '此電郵已被註冊');
         const u: SeedUser = { id: id('u'), email: e, password, display_name: display_name.trim(), roles: [] };
         state.users.push(u);
@@ -306,14 +307,14 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
         state.carts[u.id] = lines.filter((l) => l.id !== itemId);
         return cartOf(u.id);
       }),
-    createOrder: (key, body = {}) =>
+    createOrder: (key, body) =>
       run(() => {
         const u = currentUser();
         // CONTRACT.md §10 @47bc45e (branch backend/markdown-v1): key required; same key + same body replays
         // the original order; different body → 409; failed attempts don't retain the key.
         if (!key) throw err(400, 'IDEMPOTENCY_KEY_REQUIRED', '缺少 Idempotency-Key');
         const ik = `${u.id}:${key}`;
-        const bodyHash = JSON.stringify(body, Object.keys(body).sort());
+        const bodyHash = JSON.stringify(body ?? {}, Object.keys(body ?? {}).sort());
         const prev = state.idempotency[ik];
         if (prev) {
           if ((state.idempotency_body?.[ik] ?? '{}') !== bodyHash) throw err(409, 'IDEMPOTENCY_KEY_REUSED', '此 Idempotency-Key 已用於另一個請求');
@@ -321,8 +322,8 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
         }
         const cart = cartOf(u.id);
         if (!cart.items.length) throw err(422, 'CART_EMPTY', '購物車是空的');
-        // #29: a delivery address is required and snapshotted onto the order.
-        if (!body.address_id) throw err(422, 'ADDRESS_REQUIRED', '請選擇收貨地址');
+        // §12 @aec9631: address_id required and snapshotted onto the order.
+        if (!body?.address_id) throw err(422, 'ADDRESS_REQUIRED', '請選擇收貨地址');
         const addr = addressesOf(u.id).find((a) => a.id === body.address_id);
         if (!addr) throw err(404, 'ADDRESS_NOT_FOUND', '找不到收貨地址');
         if ((state.carts[u.id] ?? []).some(isUnavailable)) throw err(409, 'PRODUCT_UNAVAILABLE', '部分商品已無法購買');
@@ -333,6 +334,7 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
         for (const it of cart.items) {
           const p = findProduct(it.product.id, true);
           const v = skuOf(p, it.sku?.id);
+          p.sold_count = (p.sold_count ?? 0) + it.quantity; // §12 @aec9631
           if (v) {
             v.stock -= it.quantity;
             v.in_stock = v.stock > 0;
@@ -370,7 +372,7 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
         const u = currentUser();
         const errors = validateAddress(input);
         const first = Object.values(errors)[0];
-        if (first) throw err(422, 'VALIDATION_ERROR', first);
+        if (first) throw err(422, 'VALIDATION_FAILED', first);
         const list = addressesOf(u.id);
         if (list.length >= MAX_ADDRESSES) throw err(422, 'ADDRESS_LIMIT', `最多只可儲存 ${MAX_ADDRESSES} 個地址`);
         const makeDefault = !!input.is_default || list.length === 0;

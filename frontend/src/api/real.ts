@@ -83,7 +83,7 @@ export function createRealApi(baseUrl: string, slug: string): ShopApi {
     removeCartItem: (id) => req<Cart>('DELETE', `/shop/v1/cart-items/${encodeURIComponent(id)}`),
     // CONTRACT.md §10 @47bc45e (backend/markdown-v1): Idempotency-Key is required; on 503 TX_CONFLICT or a
     // network error, wait Retry-After (default 1s) and retry with the SAME key, at most twice.
-    createOrder: async (key, body = {}) => {
+    createOrder: async (key, body) => {
       for (let attempt = 0; ; attempt++) {
         try {
           return await req<Order>('POST', '/shop/v1/orders', body, { 'Idempotency-Key': key });
@@ -96,6 +96,7 @@ export function createRealApi(baseUrl: string, slug: string): ShopApi {
     },
     listOrders: (cursor) => req<Page<Order>>('GET', '/shop/v1/orders' + qs({ cursor })),
     getOrder: (id) => req<Order>('GET', `/shop/v1/orders/${encodeURIComponent(id)}`),
+    // §2 #17/#18, §12 @aec9631
     listAddresses: () => req<Address[]>('GET', '/shop/v1/addresses'),
     createAddress: (a) => req<Address>('POST', '/shop/v1/addresses', a),
     createProduct: (p: ProductInput) => req<Product>('POST', cat, p),
