@@ -4,7 +4,7 @@
 
 ## 欄位
 - user_id：uuid，必填；由 ctx.user.id 填入。
-- status：字串，必填，只能是 pending、paid、shipped、cancelled 之一，預設 pending。
+- status：字串，必填，只能是 pending、paid、shipped、delivered、cancelled 之一，預設 pending。
 - total_cents：整數，必填，最小 0。
 - currency：字串，必填，3 個大寫字母。
 - idempotency_key：字串，選填，最長 64 字。

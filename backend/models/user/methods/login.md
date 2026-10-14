@@ -8,8 +8,8 @@
 ## 做法
 1. 以小寫 email 查詢 users，取得 id、password_hash、roles。
 2. 用 verify-password 比對 password 與 password_hash；查無使用者或比對失敗，一律回 `INVALID_CREDENTIALS`。
-3. 用 sign-jwt 簽發 access token：sub 為使用者 id，ttl 1 小時，issue-refresh 為 new-family。
-4. 回傳 access_token、expires_at（ISO 8601 UTC）、refresh_token。
+3. 用 sign-jwt 簽發 access token：sub 為使用者 id，ttl 1 小時，issue-refresh 為 none（不發 refresh token）。
+4. 回傳 access_token 與 expires_at（ISO 8601 UTC）。
 
 ## 錯誤
 - INVALID_CREDENTIALS：帳號或密碼錯誤（不區分哪一項錯）。

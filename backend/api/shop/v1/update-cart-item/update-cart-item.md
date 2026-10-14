@@ -3,5 +3,6 @@
 PUT `/shop/v1/cart-items/{id}`。需要 JWT。
 
 - 路徑 id 為 uuid；body：quantity（整數 1 至 99，必填）。
-- 呼叫 cart-item.update，只能修改自己的品項；成功回 200 與品項。
+- 呼叫 cart-item.update，只能修改自己的品項；成功後回傳整個購物車。
 - 不存在或不屬於本人回 404 NOT_FOUND；驗證不通過回 422。
+- cart-item.update 成功後，再呼叫 cart-item.summary，回應內容改為整個購物車（items 與 subtotal_cents），狀態碼 200。

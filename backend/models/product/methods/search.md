@@ -6,7 +6,8 @@
 - q（選填，名稱關鍵字，不分大小寫的部分比對）
 - category（選填）
 - min_price_cents、max_price_cents（選填，整數）
-- sort（選填）：price_asc、price_desc、created_at_asc、created_at_desc，預設 created_at_desc
+- sort（選填）：price 或 created_at，預設 created_at
+- order（選填）：asc 或 desc，預設 desc
 - cursor（選填，上一頁回傳的 next_cursor）、limit（1 至 100，預設 20）
 
 ## 做法
