@@ -34,11 +34,11 @@ afterEach(() => {
 describe('Taobao-style layout', () => {
   it('product card shows a red price and 已售 N; hides sold count when absent', () => {
     const p = seedProducts()[6];
-    const { unmount } = render(<MemoryRouter><ProductCard p={p} /></MemoryRouter>);
+    const { unmount } = render(<MemoryRouter><AuthProvider><ProductCard p={p} /></AuthProvider></MemoryRouter>);
     expect(screen.getByText(`已售 ${p.sold_count}`)).toBeTruthy();
     expect(screen.getByText('420.00').parentElement!.className).toContain('text-price');
     unmount();
-    render(<MemoryRouter><ProductCard p={{ ...p, sold_count: undefined }} /></MemoryRouter>);
+    render(<MemoryRouter><AuthProvider><ProductCard p={{ ...p, sold_count: undefined }} /></AuthProvider></MemoryRouter>);
     expect(screen.queryByText(/已售/)).toBeNull();
   });
 
@@ -51,7 +51,7 @@ describe('Taobao-style layout', () => {
     expect(within(tabs).getByText('購物車')).toBeTruthy();
   });
 
-  it('立即購買 adds to cart and goes straight to checkout', async () => {
+  it('立即購買 goes to an isolated checkout', async () => {
     tokenStore.set(await api.login({ email: 'demo@example.com', password: 'demo1234' }));
     renderAt('/products/p_007');
     // Wait for the session to resolve (header account menu); clicking earlier would correctly send a guest to /login.

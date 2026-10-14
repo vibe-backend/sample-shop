@@ -8,6 +8,7 @@ interface AuthCtx {
   cartCount: number;
   setCartCount(n: number): void;
   refreshCart(): void;
+  refreshMe(): Promise<void>;
   login(c: Credentials): Promise<void>;
   register(r: RegisterInput): Promise<void>;
   logout(): void;
@@ -31,6 +32,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!tokenStore.get()) {
       setMe(null);
       setReady(true);
+      refreshCart();
       return;
     }
     try {
@@ -55,6 +57,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     cartCount,
     setCartCount,
     refreshCart,
+    refreshMe: loadMe,
     async login(c) {
       tokenStore.set(await api.login(c));
       await loadMe();
@@ -66,7 +69,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     logout() {
       tokenStore.clear();
       setMe(null);
-      setCartCount(0);
+      refreshCart();
     },
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

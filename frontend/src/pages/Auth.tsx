@@ -63,6 +63,7 @@ export function LoginPage() {
             <Button type="submit" size="lg" className="h-10" disabled={busy}>
               {busy ? '登入中…' : '登入'}
             </Button>
+            <Link to="/forgot-password" className="text-center text-sm text-primary hover:underline">忘記密碼</Link>
             <p className="text-center text-sm text-muted-foreground">
               還沒有帳戶？
               <Link to={`/register?next=${encodeURIComponent(next)}`} className="text-primary hover:underline">

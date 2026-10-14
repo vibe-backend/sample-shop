@@ -115,12 +115,20 @@ export function StaffProductsPage() {
                   <TableCell>{p.category}</TableCell>
                   <TableCell>{formatPrice(p.price_cents, p.currency)}</TableCell>
                   <TableCell>{p.stock}</TableCell>
-                  <TableCell>{p.active ? <Badge className="bg-success/15 text-success">上架中</Badge> : <StockTag p={p} />}</TableCell>
+                  <TableCell>
+                    {p.active ? <Badge className="bg-success/15 text-success">上架中</Badge> : <StockTag p={p} />}
+                  </TableCell>
                   <TableCell className="pr-4 text-right">
                     <Button variant="link" size="sm" asChild>
                       <Link to={`/staff/products/${p.id}`}>編輯</Link>
                     </Button>
-                    <Button variant="link" size="sm" className="text-destructive" disabled={deleting === p.id} onClick={() => setPending(p)}>
+                    <Button
+                      variant="link"
+                      size="sm"
+                      className="text-destructive"
+                      disabled={deleting === p.id}
+                      onClick={() => setPending(p)}
+                    >
                       {deleting === p.id ? '刪除中…' : '刪除'}
                     </Button>
                   </TableCell>
@@ -154,27 +162,51 @@ export function StaffProductsPage() {
   );
 }
 
-const EMPTY: ProductInput = { slug: '', name: '', description: '', price_cents: 0, currency: 'HKD', image_urls: [], category: CATEGORIES[0], stock: 0, active: true };
+const EMPTY: ProductInput = {
+  slug: '',
+  name: '',
+  description: '',
+  price_cents: 0,
+  currency: 'HKD',
+  image_urls: [],
+  category: CATEGORIES[0],
+  stock: 0,
+  active: true,
+};
 
 export function StaffEditPage() {
   const { id } = useParams();
   const nav = useNavigate();
   const [f, setF] = useState<ProductInput>(EMPTY);
   const [price, setPrice] = useState('0');
+  const [optionsText, setOptionsText] = useState('');
   const [imageText, setImageText] = useState('');
   const [loading, setLoading] = useState(!!id);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [skuCount, setSkuCount] = useState(0);
+  const [etag, setEtag] = useState<string | undefined>();
 
   useEffect(() => {
     if (!id) return;
     api
-      .getProduct(id)
+      .getStaffProduct(id)
       .then((p) => {
-        setF({ slug: p.slug, name: p.name, description: p.description, price_cents: p.price_cents, currency: p.currency, image_urls: p.image_urls, category: p.category, stock: p.stock, active: p.active });
+        setF({
+          slug: p.slug,
+          name: p.name,
+          description: p.description,
+          price_cents: p.price_cents,
+          currency: p.currency,
+          image_urls: p.image_urls,
+          category: p.category,
+          stock: p.stock,
+          active: p.active,
+        });
+        setOptionsText(p.options?.map((o) => `${o.name}:${o.values.join(',')}`).join('\n') ?? '');
         setPrice((p.price_cents / 100).toString());
-        setSkuCount(p.variants?.length ?? 0);
+        setSkuCount(p.options?.length ? Math.max(1, p.variants?.length ?? 0) : 0);
+        setEtag(p.etag);
         setImageText(p.image_urls.filter((u) => !u.startsWith('data:')).join('\n'));
       })
       .catch(setError)
@@ -185,16 +217,33 @@ export function StaffEditPage() {
     e.preventDefault();
     setBusy(true);
     setError(null);
-    const typed = imageText.split('\n').map((u) => u.trim()).filter(Boolean);
+    const typed = imageText
+      .split('\n')
+      .map((u) => u.trim())
+      .filter(Boolean);
     const image_urls = typed.length ? typed : f.image_urls.filter((u) => u.startsWith('data:'));
-    const full = { ...f, image_urls, price_cents: Math.round(Number(price) * 100) };
+    const options = optionsText
+      .split('\n')
+      .filter((line) => line.trim())
+      .map((line) => {
+        const [name, ...parts] = line.split(':');
+        return {
+          name: name.trim(),
+          values: parts
+            .join(':')
+            .split(',')
+            .map((v) => v.trim())
+            .filter(Boolean),
+        };
+      });
+    const full = { ...f, image_urls, options, price_cents: Math.round(Number(price) * 100) };
     // SKU products: price/stock come from the variants, so never send them.
     const { price_cents: _p, stock: _s, ...rest } = full;
     void _p;
     void _s;
     const body = skuCount ? rest : full;
     try {
-      if (id) await api.updateProduct(id, body);
+      if (id) await api.updateProduct(id, body, etag);
       else await api.createProduct(full);
       nav('/staff/products');
     } catch (err) {
@@ -211,19 +260,64 @@ export function StaffEditPage() {
       <PageTitle>{id ? '編輯商品' : '新增商品'}</PageTitle>
       <Card>
         <CardContent>
+          {id && (
+            <Button className="mb-4" variant="outline" asChild>
+              <Link to={`/staff/products/${id}/variants`}>管理商品規格</Link>
+            </Button>
+          )}
           <form className="grid gap-4 sm:grid-cols-2" onSubmit={submit}>
             <Field id="name" label="名稱">
-              <Input id="name" required className="h-10" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />
+              <Input
+                id="name"
+                required
+                className="h-10"
+                value={f.name}
+                onChange={(e) => setF({ ...f, name: e.target.value })}
+              />
             </Field>
             <Field id="slug" label="Slug">
-              <Input id="slug" required pattern="[a-z0-9-]+" title="小寫英文、數字及連字號" className="h-10" value={f.slug} onChange={(e) => setF({ ...f, slug: e.target.value })} />
+              <Input
+                id="slug"
+                required
+                pattern="[a-z0-9-]+"
+                title="小寫英文、數字及連字號"
+                className="h-10"
+                value={f.slug}
+                onChange={(e) => setF({ ...f, slug: e.target.value })}
+              />
             </Field>
-            {skuCount > 0 && <p className="text-sm text-muted-foreground sm:col-span-2">此商品設有 {skuCount} 個規格，價格及庫存由規格計算（最低規格價、規格庫存總和），不可在此修改。</p>}
+            {skuCount > 0 && (
+              <p className="text-sm text-muted-foreground sm:col-span-2">
+                此商品設有 {skuCount} 個規格，價格及庫存由規格計算（最低規格價、規格庫存總和），不可在此修改。
+              </p>
+            )}
             <Field id="price" label={skuCount > 0 ? '價格（HK$，由規格計算）' : '價格（HK$）'}>
-              <Input id="price" type="number" min="0" step="0.01" required readOnly={skuCount > 0} aria-readonly={skuCount > 0} className="h-10 read-only:bg-muted" value={price} onChange={(e) => setPrice(e.target.value)} />
+              <Input
+                id="price"
+                type="number"
+                min="0"
+                step="0.01"
+                required
+                readOnly={skuCount > 0}
+                aria-readonly={skuCount > 0}
+                className="h-10 read-only:bg-muted"
+                value={price}
+                onChange={(e) => setPrice(e.target.value)}
+              />
             </Field>
             <Field id="stock" label={skuCount > 0 ? '庫存（由規格計算）' : '庫存'}>
-              <Input id="stock" type="number" min="0" step="1" required readOnly={skuCount > 0} aria-readonly={skuCount > 0} className="h-10 read-only:bg-muted" value={f.stock} onChange={(e) => setF({ ...f, stock: Number(e.target.value) })} />
+              <Input
+                id="stock"
+                type="number"
+                min="0"
+                step="1"
+                required
+                readOnly={skuCount > 0}
+                aria-readonly={skuCount > 0}
+                className="h-10 read-only:bg-muted"
+                value={f.stock}
+                onChange={(e) => setF({ ...f, stock: Number(e.target.value) })}
+              />
             </Field>
             <Field id="category" label="分類">
               <Select value={f.category} onValueChange={(v) => setF({ ...f, category: v })}>
@@ -245,12 +339,22 @@ export function StaffEditPage() {
             </div>
             <div className="sm:col-span-2">
               <Field id="description" label="描述">
-                <Textarea id="description" rows={4} value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} />
+                <Textarea
+                  id="description"
+                  rows={4}
+                  value={f.description}
+                  onChange={(e) => setF({ ...f, description: e.target.value })}
+                />
               </Field>
             </div>
             <div className="sm:col-span-2">
               <Field id="images" label="圖片網址（每行一個；示範圖片不會顯示在此）">
                 <Textarea id="images" rows={2} value={imageText} onChange={(e) => setImageText(e.target.value)} />
+              </Field>
+            </div>
+            <div className="sm:col-span-2">
+              <Field id="options" label="商品選項（每行 名稱:值1,值2，例如 顏色:霧白,墨黑）">
+                <Textarea id="options" rows={3} value={optionsText} onChange={(e) => setOptionsText(e.target.value)} />
               </Field>
             </div>
             <div className="grid gap-3 sm:col-span-2">

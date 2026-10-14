@@ -3,7 +3,8 @@ import type { Product, ProductOption, ProductVariant, Role } from './types';
 export interface SeedUser {
   id: string;
   email: string;
-  password: string;
+  password?: string;
+  password_hash?: string;
   display_name: string;
   roles: Role[];
 }
@@ -20,7 +21,17 @@ export function placeholderImage(emoji: string, hue: number): string {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
-type SeedRow = [slug: string, name: string, category: string, price: number, stock: number, emoji: string, hue: number, desc: string, active?: boolean];
+type SeedRow = [
+  slug: string,
+  name: string,
+  category: string,
+  price: number,
+  stock: number,
+  emoji: string,
+  hue: number,
+  desc: string,
+  active?: boolean,
+];
 
 const ROWS: SeedRow[] = [
   ['ceramic-mug', '手工陶瓷馬克杯', '廚房', 18800, 24, '☕', 30, '台灣窯燒手工陶瓷，容量 350ml，可微波及洗碗機清洗。'],
@@ -46,7 +57,29 @@ export function seedProducts(now = Date.UTC(2026, 9, 1)): Product[] {
     description,
     price_cents: price,
     currency: 'HKD',
-    image_urls: [placeholderImage(emoji, hue)],
+    image_urls:
+      i < 4
+        ? [placeholderImage(emoji, hue), placeholderImage(emoji, hue + 40), placeholderImage(emoji, hue + 80)]
+        : [placeholderImage(emoji, hue)],
+    brand: i % 2 ? '生活工房' : 'Sample Select',
+    subcategory: [
+      '餐具',
+      '咖啡',
+      '手袋',
+      '紙品',
+      '書寫',
+      '燈具',
+      '香氛',
+      '寢具',
+      '音訊',
+      '支架',
+      '茶葉',
+      '零食',
+      '裝飾',
+    ][i],
+    attributes: { 產地: i % 2 ? '香港' : '台灣', 特色: i % 3 ? '日常' : '手作' },
+    compare_at_price_cents: i % 3 === 0 ? price + 5000 : undefined,
+    return_days: category === '食品' ? 0 : 7,
     category,
     stock,
     in_stock: stock > 0,
@@ -101,7 +134,7 @@ export function withVariants(p: Product): Product {
 }
 
 /** Product-level price/stock mirror the SKUs: lowest price, summed stock. */
-// CONTRACT.md @dd5bf0b §9: inactive variants are omitted from `variants`; price = min over listed
+// CONTRACT.md @a3d4304 §9: inactive variants are omitted from `variants`; price = min over listed
 // variants (zero-stock ones included), stock = their sum. Options but no variants → not purchasable.
 export function syncVariantTotals(p: Product): Product {
   if (p.options?.length && !p.variants?.length) {
@@ -110,8 +143,14 @@ export function syncVariantTotals(p: Product): Product {
     return p;
   }
   if (!p.variants?.length) return p;
-  p.stock = p.variants.reduce((s, v) => s + v.stock, 0);
+  const active = p.variants.filter((v) => v.active !== false);
+  if (!active.length) {
+    p.stock = 0;
+    p.in_stock = false;
+    return p;
+  }
+  p.stock = active.reduce((s, v) => s + v.stock, 0);
   p.in_stock = p.stock > 0;
-  p.price_cents = Math.min(...p.variants.map((v) => v.price_cents));
+  p.price_cents = Math.min(...active.map((v) => v.price_cents));
   return p;
 }

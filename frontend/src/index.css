@@ -54,8 +54,8 @@
 
 :root {
     color-scheme: light;
-    --success: #1a7f37;
-    --warning: #b25000;
+    --success: #166c2f; /* AA on 15% tints: 5.2:1 */
+    --warning: #9a4500; /* AA on 15% tints: 5.2:1 */
     /* WCAG AA: #d4002a is 5.48:1 on white, 4.96:1 on --secondary. */
     --price: #d4002a;
     --background: #f4f4f4;

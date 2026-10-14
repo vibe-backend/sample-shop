@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { AlertCircle, Loader2 } from 'lucide-react';
 import { ApiRequestError } from '../api';
@@ -34,7 +34,9 @@ export function PageTitle({ children, className = '' }: { children: ReactNode; c
 }
 
 export function Empty({ children }: { children: ReactNode }) {
-  return <section className="flex flex-col items-center gap-4 py-12 text-center text-muted-foreground">{children}</section>;
+  return (
+    <section className="flex flex-col items-center gap-4 py-12 text-center text-muted-foreground">{children}</section>
+  );
 }
 
 /** Small async loader: returns [data, error, loading, reload]. */
@@ -56,7 +58,8 @@ export function useAsync<T>(fn: () => Promise<T>, deps: unknown[]): [T | null, u
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [...deps, tick]);
-  return [data, error, loading, () => setTick((t) => t + 1)];
+  const reload = useCallback(() => setTick((t) => t + 1), []);
+  return [data, error, loading, reload];
 }
 
 export function RequireAuth({ staff, children }: { staff?: boolean; children: ReactNode }) {

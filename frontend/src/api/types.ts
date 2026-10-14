@@ -1,3 +1,5 @@
+import type { CheckoutTotals, OrderQuery, ShippingMethod, ShopFeatures } from './features';
+export * from './features';
 // Types mirroring the agreed sample-shop API contract.
 // Timestamps are ISO 8601 UTC strings; money is integer minor units (*_cents).
 
@@ -46,6 +48,8 @@ export interface Me {
 }
 
 export interface Product {
+  /** HTTP ETag from a product detail response; pass it back unchanged when editing. */
+  etag?: string;
   id: string;
   slug: string;
   name: string;
@@ -60,6 +64,15 @@ export interface Product {
   created_at: string;
   /** Optional display field (「已售 N」); hidden when absent, e.g. real mode until the contract adds it. */
   sold_count?: number;
+  rating_avg?: number;
+  review_count?: number;
+  brand?: string;
+  subcategory?: string;
+  attributes?: Record<string, string>;
+  compare_at_price_cents?: number;
+  return_days?: number;
+  reserved_stock?: number;
+  campaign?: { starts_at: string; ends_at: string; price_cents: number; limit: number; sold: number };
   /**
    * Contract addition (#17): spec groups, e.g. [{ name: '顏色', values: ['黑色', '米白'] }].
    * Absent/empty → product has no variants. When present, price_cents is the lowest SKU price
@@ -79,6 +92,9 @@ export interface ProductOption {
 }
 
 export interface ProductVariant {
+  active?: boolean;
+  version?: number;
+  reserved_stock?: number;
   /** sku_id */
   id: string;
   options: SkuOptions;
@@ -93,11 +109,15 @@ export interface Page<T> {
   next_cursor: string | null;
 }
 
-export type ProductSort = 'price_asc' | 'price_desc' | 'created_at_asc' | 'created_at_desc';
+export type ProductSort =
+  'price_asc' | 'price_desc' | 'created_at_asc' | 'created_at_desc' | 'sales_desc' | 'rating_desc' | 'relevance_desc';
 
 export interface ProductQuery {
   q?: string;
   category?: string;
+  brands?: string[];
+  subcategory?: string;
+  attributes?: Record<string, string[]>;
   min_price_cents?: number;
   max_price_cents?: number;
   sort?: ProductSort;
@@ -105,7 +125,11 @@ export interface ProductQuery {
   limit?: number;
 }
 
-export type ProductInput = Omit<Product, 'id' | 'in_stock' | 'created_at'>;
+/** CONTRACT.md §3 @a3d4304: `sold_count` is server-maintained and never part of the input. */
+export type ProductInput = Omit<
+  Product,
+  'id' | 'in_stock' | 'created_at' | 'sold_count' | 'rating_avg' | 'review_count' | 'reserved_stock' | 'etag'
+>;
 
 export interface ProductSummary {
   id: string;
@@ -130,6 +154,12 @@ export interface CartItem {
   sku?: SkuRef | null;
   quantity: number;
   line_total_cents: number;
+  stock?: number;
+  unavailable?: boolean;
+  original_price_cents?: number;
+  price_changed?: boolean;
+  /** Guest line ids retained while merging into an existing account SKU line. */
+  merged_from_ids?: string[];
 }
 
 export interface Cart {
@@ -137,8 +167,19 @@ export interface Cart {
   subtotal_cents: number;
 }
 
-/** Contract gap: the status values are not fixed; these are assumed. */
+/** CONTRACT.md §3/§7 values. Transitions (#34, not yet in CONTRACT.md): see `lib/orderStatus.ts`. */
 export type OrderStatus = 'pending' | 'paid' | 'shipped' | 'delivered' | 'cancelled';
+
+/** #34 (not yet in CONTRACT.md): one entry per status change, oldest first. */
+export interface OrderStatusEvent {
+  status: OrderStatus;
+  at: string;
+}
+
+/** #34 (not yet in CONTRACT.md): staff view of an order with its buyer. */
+export interface StaffOrder extends Order {
+  buyer: { id: string; display_name: string; email: string };
+}
 
 export interface OrderItem {
   product_id: string;
@@ -152,19 +193,83 @@ export interface OrderItem {
   line_total_cents: number;
 }
 
-export interface Order {
+/**
+ * Saved delivery address — CONTRACT.md §12 @a3d4304 (backend/markdown-v1), reusable by #44.
+ * GET/POST /shop/v1/addresses (§2 #17/#18; JWT, own addresses only).
+ */
+export interface Address {
+  id: string;
+  recipient: string;
+  /** 8-digit HK number, stored normalised (no +852 / spaces). */
+  phone: string;
+  /** One of 香港島 / 九龍 / 新界 / 離島 */
+  region: string;
+  /** 詳細地址 */
+  line1: string;
+  is_default: boolean;
+  created_at: string;
+}
+
+export interface AddressInput {
+  recipient: string;
+  phone: string;
+  region: string;
+  line1: string;
+  is_default?: boolean;
+}
+
+/** Copied onto the order at placement; later address-book edits never change it. */
+export type AddressSnapshot = Pick<Address, 'recipient' | 'phone' | 'region' | 'line1'>;
+
+/** CONTRACT.md §13 @a3d4304: demo payment methods; no real money moves. */
+export type PaymentMethod = 'mock_card' | 'mock_alipay';
+
+/** §13 @a3d4304: POST /shop/v1/orders/{id}/payments body (both fields validated → 422 VALIDATION_FAILED). */
+export interface PaymentInput {
+  method: PaymentMethod;
+  /** Demo only: forces the simulated gateway result. */
+  simulate: 'success' | 'failure';
+}
+
+export interface Order extends Partial<CheckoutTotals> {
+  shipping_method?: ShippingMethod;
+  note?: string;
+  cancellation_reason?: string;
+  reservation_expires_at?: string;
+  reservation_active?: boolean;
+  hidden?: boolean;
+  refunded_cents?: number;
+  points_earned?: number;
+  points_used?: number;
+  shipment?: { carrier: string; tracking_number: string; events: { at: string; description: string }[] };
   id: string;
   status: OrderStatus;
+  /** §13 @a3d4304: always present; null until paid. */
+  payment_method: PaymentMethod | null;
+  /** §13 @a3d4304: ISO 8601 UTC; always present, null until paid. */
+  paid_at: string | null;
+  /** #34 (not yet in CONTRACT.md): status timeline, oldest first. */
+  status_history?: OrderStatusEvent[];
+  /** §12 @a3d4304: snapshot written at order time; null/absent only for legacy orders placed before addresses existed. */
+  shipping_address?: AddressSnapshot | null;
   items: OrderItem[];
   total_cents: number;
   currency: string;
   created_at: string;
 }
 
-/** POST /shop/v1/orders body; `{}` for now. */
-export type CreateOrderInput = Record<string, unknown>;
+/** POST /shop/v1/orders body — §2 #14 / §12 @a3d4304: `address_id` required (422 ADDRESS_REQUIRED, 404 ADDRESS_NOT_FOUND). */
+export interface CreateOrderInput {
+  address_id: string;
+  item_ids?: string[];
+  buy_now?: { product_id: string; sku_id?: string | null; quantity: number };
+  shipping_method?: ShippingMethod;
+  coupon_id?: string;
+  points?: number;
+  note?: string;
+}
 
-export interface ShopApi {
+export interface ShopApi extends ShopFeatures {
   login(c: Credentials): Promise<AuthToken>;
   register(r: RegisterInput): Promise<AuthToken>;
   me(): Promise<Me>;
@@ -172,18 +277,42 @@ export interface ShopApi {
   /** Staff only; includes inactive products. GET /catalog/v1/{slug}/staff/products */
   listStaffProducts(q?: ProductQuery): Promise<Page<Product>>;
   getProduct(id: string): Promise<Product>;
+  getStaffProduct(id: string): Promise<Product>;
   getCart(): Promise<Cart>;
   addCartItem(productId: string, quantity: number, skuId?: string | null): Promise<Cart>;
   updateCartItem(itemId: string, quantity: number): Promise<Cart>;
   removeCartItem(itemId: string): Promise<Cart>;
   /**
-   * Idempotency-Key is required (CONTRACT.md §10 @47bc45e, backend/markdown-v1). Same key + same
+   * Idempotency-Key is required (CONTRACT.md §10 @a3d4304, backend/markdown-v1). Same key + same
    * body replays the original order; same key + different body → 409 IDEMPOTENCY_KEY_REUSED.
    */
-  createOrder(idempotencyKey: string, body?: CreateOrderInput): Promise<Order>;
-  listOrders(cursor?: string): Promise<Page<Order>>;
+  createOrder(idempotencyKey: string, body: CreateOrderInput): Promise<Order>;
+  listOrders(cursor?: string, query?: OrderQuery): Promise<Page<Order>>;
   getOrder(id: string): Promise<Order>;
+  /**
+   * §13 @a3d4304: simulated payment for a pending order. Success → 200 `paid`; failure → 402
+   * PAYMENT_DECLINED, nothing written, key not kept. Same key + different order/body → 409 IDEMPOTENCY_KEY_REUSED.
+   */
+  payOrder(orderId: string, p: PaymentInput, idempotencyKey: string): Promise<Order>;
+  /** §2 #17 / §12 @a3d4304: GET /shop/v1/addresses → Address[] (not paged), default first, then newest first. */
+  listAddresses(): Promise<Address[]>;
+  /** #34: buyer cancels a pending/paid order (stock restored). 409 INVALID_TRANSITION otherwise. */
+  cancelOrder(orderId: string, reason?: string): Promise<Order>;
+  /** #34: buyer confirms receipt of a shipped order → delivered. 409 INVALID_TRANSITION otherwise. */
+  confirmDelivery(orderId: string): Promise<Order>;
+  /** #34: staff — all orders, newest first, optional status filter. */
+  listStaffOrders(q?: { status?: OrderStatus; cursor?: string }): Promise<Page<StaffOrder>>;
+  /** #34: staff marks a paid order shipped (also allows staff cancel). 409 INVALID_TRANSITION otherwise. */
+  updateStaffOrderStatus(orderId: string, status: 'shipped' | 'cancelled'): Promise<StaffOrder>;
+  /** §2 #18 / §12 @a3d4304: POST /shop/v1/addresses → 201; 422 VALIDATION_FAILED, 422 ADDRESS_LIMIT. */
+  createAddress(a: AddressInput): Promise<Address>;
+  /** §12 @a3d4304 (planned for #44, unverified): PUT /shop/v1/addresses/{id} → 200 Address; 404 ADDRESS_NOT_FOUND, 422 VALIDATION_FAILED. `is_default` is ignored — use setDefaultAddress. */
+  updateAddress(id: string, a: AddressInput): Promise<Address>;
+  /** §12 @a3d4304 (planned): DELETE /shop/v1/addresses/{id} → 204 (soft delete); deleting the default promotes the newest remaining address. */
+  deleteAddress(id: string): Promise<void>;
+  /** §12 @a3d4304 (planned): POST /shop/v1/addresses/{id}/default → 200 Address. */
+  setDefaultAddress(id: string): Promise<Address>;
   createProduct(p: ProductInput): Promise<Product>;
-  updateProduct(id: string, p: Partial<ProductInput>): Promise<Product>;
+  updateProduct(id: string, p: Partial<ProductInput>, etag?: string): Promise<Product>;
   deleteProduct(id: string): Promise<void>;
 }

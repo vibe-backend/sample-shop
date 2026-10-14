@@ -22,6 +22,10 @@ Other scripts:
 | `npm run build` | Production build into `dist/` (base path `/sample-shop/`); requires `VITE_API_MODE` |
 | `npm run preview` | Serve the production build |
 
+## Frontend feature draft
+
+The shopping draft adds buyer discovery, cart selection, guest carts, buy-now checkout, promotions, account management, reviews, returns and staff SKU management in mock mode. See [issue coverage and production dependencies](docs/FRONTEND-DRAFT.md). These features are a frontend prototype; new real-mode methods explicitly report unavailable until their backend contracts exist.
+
 ## Mock vs real API
 
 The whole app talks to one typed `ShopApi` interface (`src/api/types.ts`), which mirrors the API contract. `src/api/index.ts` picks the adapter at build time:
@@ -49,16 +53,24 @@ VITE_API_BASE_URL=https://your-backend.example
 
 The real adapter (`src/api/real.ts`) is written against the contract but has not been run against a backend yet.
 
-**Product SKUs / variants (#17): real mode 未支援 SKU (not verified).** `backend/CONTRACT.md` on `backend/markdown-v1` @47bc45e (§9–§11) now defines `options`, `variants` and `sku_id`, and the real adapter follows it, but the backend does not compile yet, so SKUs have only been exercised in mock mode. Staff SKU management is tracked in #61.
+**Product SKUs / variants (#17): real mode 未支援 SKU (not verified).** `backend/CONTRACT.md` on `backend/markdown-v1` @a3d4304 (§9–§11) now defines `options`, `variants` and `sku_id`, and the real adapter follows it, but the backend does not compile yet, so SKUs have only been exercised in mock mode. Staff SKU management (#61) is available in mock mode in this draft; the production If-Match endpoint is still pending.
 
-Order creation always sends an `Idempotency-Key` (required, §10 @47bc45e); on `503 TX_CONFLICT` or a network error the real adapter retries up to twice with the same key after `Retry-After`.
+Order creation always sends an `Idempotency-Key` (required, §10 @a3d4304); on `503 TX_CONFLICT` or a network error the real adapter retries up to twice with the same key after `Retry-After`.
 
-Mock data is stored in `localStorage` under `shop.mock.v2`. Data from the older `shop.mock.v1` key is migrated once on load (users, orders and staff edits kept; demo SKUs attached; cart lines for products that now need a spec are dropped) and the old key is removed.
+**Delivery addresses (#29): real mode defined but unverified.** `GET/POST /shop/v1/addresses` and the required `address_id` on order creation follow `backend/CONTRACT.md` §12 @a3d4304; the backend does not compile yet, so this has only been exercised in mock mode.
+
+**Mock payment (#30): real mode defined in contract, unverified.** `POST /shop/v1/orders/{id}/payments` (`Idempotency-Key` required; `402 PAYMENT_DECLINED`, `409 ORDER_NOT_PAYABLE` / `IDEMPOTENCY_KEY_REUSED`) and `Order.payment_method` / `paid_at` follow `backend/CONTRACT.md` §13 @a3d4304, but the backend does not compile yet, so payment has only been exercised in mock mode. The pay page reuses one key per attempt (new key after a definitive failure or a method change). Stock reservation before payment and auto-cancel of unpaid orders are deferred to #66.
+
+**Address book (#44): real mode unverified.** `/account/addresses` lets buyers edit, delete and set the default address (max 20). The real adapter calls `PUT /shop/v1/addresses/{id}`, `DELETE /shop/v1/addresses/{id}` and `POST /shop/v1/addresses/{id}/default`, the routes `backend/CONTRACT.md` §12 @a3d4304 lists as *planned* (v1 not implemented), so they are untested against a backend.
+
+**Order status flow (#34): real mode 未支援 (not in contract yet).** The mock implements `pending → paid → shipped → delivered` plus buyer/staff cancel of `pending`/`paid` orders (stock restored), with `status_history` and `409 INVALID_TRANSITION` for illegal moves. The real adapter calls the *proposed* `POST /shop/v1/orders/{id}/cancel`, `POST /shop/v1/orders/{id}/confirm-delivery`, `GET /shop/v1/staff/orders` and `PUT /shop/v1/staff/orders/{id}/status`, which `backend/CONTRACT.md` @a3d4304 does not define yet.
+
+Mock data is stored in `localStorage` under `shop.mock.v2`. Data from the older `shop.mock.v1` key is migrated once on load (users, orders and staff edits kept; demo SKUs attached; cart lines for products that now need a spec are dropped) and the old key is removed. Migrated users get no demo addresses (only a fresh seed has them), so they add one at checkout.
 
 ### Mock mode
 
 - Seed data lives in `src/api/seed.ts`: 13 products, one of them inactive. Product images are generated placeholder SVGs.
-- Demo data (users, carts, orders, stock) is saved in `localStorage`. Use **重設示範資料** in the banner to reset it. Sessions are not saved, so a reload signs you out, the same as in real mode.
+- Demo data (users with salted password verifiers, carts, orders, stock) is saved in `localStorage`. Use **重設示範資料** in the banner to reset it. Sessions are not saved, so a reload signs you out, the same as in real mode.
 - Each call waits 150–450 ms to imitate network latency.
 - Errors use the contract shape `{code, message}`, for example `401 INVALID_CREDENTIALS`, `401 UNAUTHENTICATED`, `403 FORBIDDEN`, `409 OUT_OF_STOCK`, `409 EMAIL_TAKEN`, `422 CART_EMPTY`.
 
@@ -100,4 +112,4 @@ Routes use hash routing (`#/...`), so deep links work on GitHub Pages without a 
 - Every cart mutation (POST, PATCH, DELETE) returns the full cart.
 - Login/register return `{access_token, expires_at}`; there is no refresh token.
 - Product has a `category` string; products and orders carry a `currency` (mock uses HKD).
-- Checkout has no address or payment fields.
+- Checkout requires a saved address and proceeds to simulated payment. Draft-only delivery, discount, points, note and selected-item fields are sent only in mock mode.
