@@ -52,6 +52,8 @@ export function seedProducts(now = Date.UTC(2026, 9, 1)): Product[] {
     in_stock: stock > 0,
     active,
     created_at: new Date(now - (ROWS.length - i) * 86_400_000).toISOString(),
+    // Deterministic demo sold counts for the 「已售 N」 label.
+    sold_count: ((i * 7919 + 131) % 2400) + 12,
   })).map(withVariants);
 }
 

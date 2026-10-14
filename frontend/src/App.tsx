@@ -1,10 +1,12 @@
-import { Link, NavLink, Route, Routes, useNavigate } from 'react-router-dom';
-import { LogOut, Menu, Monitor, Moon, ShoppingCart, Sun, User } from 'lucide-react';
+import { useEffect, useState, type FormEvent } from 'react';
+import { Link, NavLink, Route, Routes, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { House, ListOrdered, LogOut, Menu, Monitor, Moon, Search, ShoppingCart, Sun, User } from 'lucide-react';
 import { API_MODE, resetMockData } from './api';
 import { useAuth } from './auth';
 import { RequireAuth } from './components/ui-helpers';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -53,6 +55,80 @@ function ThemeMenu() {
 const navClass = ({ isActive }: { isActive: boolean }) =>
   cn('text-sm transition-colors hover:text-foreground', isActive ? 'text-foreground font-medium' : 'text-muted-foreground');
 
+/** Wide header search with an orange button; submits to the home page's ?q= filter. */
+function HeaderSearch({ className }: { className?: string }) {
+  const nav = useNavigate();
+  const [params] = useSearchParams();
+  const { pathname } = useLocation();
+  const q = pathname === '/' ? (params.get('q') ?? '') : '';
+  const [draft, setDraft] = useState(q);
+  useEffect(() => setDraft(q), [q]);
+  function submit(e: FormEvent) {
+    e.preventDefault();
+    const n = pathname === '/' ? new URLSearchParams(params) : new URLSearchParams();
+    if (draft.trim()) n.set('q', draft.trim());
+    else n.delete('q');
+    const s = n.toString();
+    nav(s ? `/?${s}` : '/');
+  }
+  return (
+    <form role="search" onSubmit={submit} className={cn('flex h-10 items-stretch rounded-full border-2 border-primary bg-card', className)}>
+      <Search className="my-auto ml-3 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+      <Input type="search" placeholder="搜尋商品…" aria-label="搜尋商品" className="h-full flex-1 border-0 bg-transparent shadow-none focus-visible:ring-0 dark:bg-transparent" value={draft} onChange={(e) => setDraft(e.target.value)} />
+      <Button type="submit" className="m-0.5 h-auto rounded-full px-5 sm:px-7">
+        搜尋
+      </Button>
+    </form>
+  );
+}
+
+/** 「我的」 tab target: the account menu as a page (mobile). */
+function AccountPage() {
+  const { me, isStaff, logout } = useAuth();
+  const nav = useNavigate();
+  return (
+    <section className="mx-auto grid max-w-md gap-3">
+      <div className="rounded-xl bg-gradient-to-r from-[#ff9000] to-primary p-5 text-white">
+        <div className="text-lg font-semibold">{me?.display_name}</div>
+        <div className="text-sm opacity-90">{me?.email}</div>
+      </div>
+      <nav className="grid divide-y rounded-xl bg-card" aria-label="帳戶">
+        <Link to="/orders" className="px-4 py-3">我的訂單</Link>
+        {isStaff && <Link to="/staff/products" className="px-4 py-3">商品管理</Link>}
+        <button type="button" className="px-4 py-3 text-left text-destructive" onClick={() => { logout(); nav('/'); }}>
+          登出
+        </button>
+      </nav>
+    </section>
+  );
+}
+
+/** Mobile-only bottom tab bar. */
+function BottomTabs({ cartCount, signedIn }: { cartCount: number; signedIn: boolean }) {
+  const tab = ({ isActive }: { isActive: boolean }) => cn('relative flex flex-1 flex-col items-center gap-0.5 py-1.5 text-[11px]', isActive ? 'text-primary' : 'text-muted-foreground');
+  return (
+    <nav aria-label="底部分頁" className="fixed inset-x-0 bottom-0 z-40 flex border-t bg-card/95 pb-[env(safe-area-inset-bottom)] backdrop-blur sm:hidden">
+      <NavLink to="/" end className={tab}>
+        <House className="size-5" aria-hidden="true" />
+        首頁
+      </NavLink>
+      <NavLink to="/cart" className={tab}>
+        <ShoppingCart className="size-5" aria-hidden="true" />
+        {cartCount > 0 && <Badge className="absolute top-0.5 left-1/2 ml-1 h-4 min-w-4 px-1 text-[10px]">{cartCount}</Badge>}
+        購物車
+      </NavLink>
+      <NavLink to="/orders" className={tab}>
+        <ListOrdered className="size-5" aria-hidden="true" />
+        訂單
+      </NavLink>
+      <NavLink to={signedIn ? '/account' : '/login'} className={tab}>
+        <User className="size-5" aria-hidden="true" />
+        {signedIn ? '我的' : '登入'}
+      </NavLink>
+    </nav>
+  );
+}
+
 export default function App() {
   const { me, isStaff, cartCount, logout } = useAuth();
   const nav = useNavigate();
@@ -69,8 +145,8 @@ export default function App() {
 
   return (
     <div className="flex min-h-svh flex-col">
-      <header className="sticky top-0 z-40 border-b bg-background/80 backdrop-blur-xl backdrop-saturate-150">
-        <div className="mx-auto flex h-14 max-w-6xl items-center gap-4 px-4 sm:px-6">
+      <header className="sticky top-0 z-40 border-b bg-card/95 backdrop-blur-xl">
+        <div className="mx-auto flex h-14 max-w-7xl items-center gap-4 px-3 sm:h-16 sm:px-6">
           <Sheet>
             <SheetTrigger asChild>
               <Button variant="ghost" size="icon" className="sm:hidden" aria-label="開啟選單">
@@ -92,10 +168,11 @@ export default function App() {
               </nav>
             </SheetContent>
           </Sheet>
-          <Link to="/" className="text-base font-semibold tracking-tight">
-            Sample<span className="font-normal text-muted-foreground">Shop</span>
+          <Link to="/" className="shrink-0 text-lg font-bold tracking-tight text-primary sm:text-xl">
+            Sample<span className="font-normal text-foreground">Shop</span>
           </Link>
-          <nav className="hidden flex-1 items-center gap-6 sm:flex" aria-label="主選單">
+          <HeaderSearch className="hidden max-w-2xl flex-1 sm:flex" />
+          <nav className="hidden items-center gap-5 lg:flex" aria-label="主選單">
             {links.map((l) => (
               <NavLink key={l.to} to={l.to} end={l.end} className={navClass}>
                 {l.label}
@@ -159,7 +236,10 @@ export default function App() {
           )}
         </div>
       )}
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 pt-6 pb-12 sm:px-6">
+      <div className="border-b bg-card px-3 py-2 sm:hidden">
+        <HeaderSearch />
+      </div>
+      <main className="mx-auto w-full max-w-7xl flex-1 px-3 pt-4 pb-24 sm:px-6 sm:pt-6 sm:pb-12">
         <Routes>
           <Route path="/" element={<ProductListPage />} />
           <Route path="/products/:id" element={<ProductDetailPage />} />
@@ -167,6 +247,7 @@ export default function App() {
           <Route path="/checkout" element={<RequireAuth><CheckoutPage /></RequireAuth>} />
           <Route path="/orders" element={<RequireAuth><OrdersPage /></RequireAuth>} />
           <Route path="/orders/:id" element={<RequireAuth><OrderDetailPage /></RequireAuth>} />
+          <Route path="/account" element={<RequireAuth><AccountPage /></RequireAuth>} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/staff/products" element={<RequireAuth staff><StaffProductsPage /></RequireAuth>} />
@@ -185,7 +266,8 @@ export default function App() {
           />
         </Routes>
       </main>
-      <footer className="mx-auto w-full max-w-6xl border-t px-4 pt-5 pb-10 text-xs text-muted-foreground sm:px-6">Sample Shop · vibe-backend 示範前端</footer>
+      <footer className="mx-auto hidden w-full max-w-7xl border-t px-4 pt-5 pb-10 text-xs text-muted-foreground sm:block sm:px-6">Sample Shop · vibe-backend 示範前端</footer>
+      <BottomTabs cartCount={cartCount} signedIn={!!me} />
     </div>
   );
 }

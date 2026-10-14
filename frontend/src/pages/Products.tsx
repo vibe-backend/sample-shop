@@ -1,6 +1,6 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ChevronLeft, Search } from 'lucide-react';
+import { ChevronLeft } from 'lucide-react';
 import { api, formatPrice, type Product, type ProductSort } from '../api';
 import { findVariant, hasVariants, isValueAvailable, missingOptions, priceRange, type Selection } from '@/lib/sku';
 import { cn } from '@/lib/utils';
@@ -8,7 +8,6 @@ import { useAuth } from '../auth';
 import { Empty, ErrorNote, Spinner, useAsync } from '../components/ui-helpers';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -35,20 +34,87 @@ export function StockTag({ p }: { p: Pick<Product, 'in_stock' | 'stock' | 'activ
   return null;
 }
 
+const GRID = 'grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 lg:grid-cols-5';
+
 function GridSkeleton() {
   return (
-    <ul className="grid grid-cols-2 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(230px,1fr))] sm:gap-5" aria-hidden="true">
-      {Array.from({ length: 8 }, (_, i) => (
-        <li key={i} className="overflow-hidden rounded-xl ring-1 ring-foreground/10">
+    <ul className={GRID} aria-hidden="true">
+      {Array.from({ length: 10 }, (_, i) => (
+        <li key={i} className="overflow-hidden rounded-lg bg-card">
           <Skeleton className="aspect-square rounded-none" />
-          <div className="space-y-2 p-4">
-            <Skeleton className="h-3 w-12" />
-            <Skeleton className="h-4 w-3/4" />
-            <Skeleton className="h-4 w-16" />
+          <div className="space-y-2 p-2.5">
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-2/3" />
+            <Skeleton className="h-5 w-16" />
           </div>
         </li>
       ))}
     </ul>
+  );
+}
+
+/** Our own generated banner art: gradient + emoji, no third-party images or marks. */
+const SLIDES = [
+  { title: '秋日家居節', sub: '香氛、燈具、毛毯 精選推介', emoji: '🕯️', from: '#ff9000', to: '#ff5000' },
+  { title: '文具新學期', sub: '筆記本、鋼筆 一站買齊', emoji: '📓', from: '#ff4d6a', to: '#ff7a00' },
+  { title: '咖啡生活', sub: '手沖入門組 新手必備', emoji: '☕', from: '#ffb000', to: '#ff6a1f' },
+];
+
+export function Carousel() {
+  const [i, setI] = useState(0);
+  useEffect(() => {
+    if (globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    const t = setInterval(() => setI((x) => (x + 1) % SLIDES.length), 5000);
+    return () => clearInterval(t);
+  }, []);
+  const sl = SLIDES[i];
+  return (
+    <div className="relative overflow-hidden rounded-xl" role="region" aria-roledescription="carousel" aria-label="推介">
+      <div key={i} className="flex h-40 items-center justify-between px-6 text-white motion-safe:animate-[tb-fade_.5s_ease] sm:h-full sm:min-h-64 sm:px-10" style={{ background: `linear-gradient(120deg, ${sl.from}, ${sl.to})` }} aria-live="polite">
+        <div>
+          <p className="text-2xl font-bold sm:text-4xl">{sl.title}</p>
+          <p className="mt-1 text-sm opacity-90 sm:text-lg">{sl.sub}</p>
+        </div>
+        <span className="text-6xl sm:text-8xl" aria-hidden="true">
+          {sl.emoji}
+        </span>
+      </div>
+      <div className="absolute inset-x-0 bottom-2 flex justify-center gap-1.5">
+        {SLIDES.map((x, j) => (
+          <button key={x.title} type="button" aria-label={`第 ${j + 1} 張`} aria-current={j === i} onClick={() => setI(j)} className={cn('h-1.5 rounded-full bg-white/60 transition-all', j === i ? 'w-5 bg-white' : 'w-1.5')} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Red, large price; "起" when the product has a price range. */
+export function Price({ p, className }: { p: Product; className?: string }) {
+  const [lo, hi] = priceRange(p);
+  return (
+    <span className={cn('font-bold text-price', className)}>
+      <span className="text-xs">HK$</span>
+      <span className="text-lg">{(lo / 100).toFixed(2)}</span>
+      {hi > lo && <span className="text-xs font-normal"> 起</span>}
+    </span>
+  );
+}
+
+export function ProductCard({ p }: { p: Product }) {
+  return (
+    <Link to={`/products/${p.id}`} className="group block h-full overflow-hidden rounded-lg bg-card ring-1 ring-transparent transition hover:ring-primary focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none">
+      <div className="aspect-square bg-muted">
+        <img src={p.image_urls[0]} alt="" loading="lazy" className="size-full object-cover" />
+      </div>
+      <div className="space-y-1 p-2.5">
+        <h2 className="line-clamp-2 min-h-10 text-sm leading-5">{p.name}</h2>
+        <div className="flex flex-wrap items-baseline justify-between gap-x-1">
+          <Price p={p} />
+          {p.sold_count !== undefined && <span className="text-xs text-muted-foreground">已售 {p.sold_count}</span>}
+        </div>
+        <StockTag p={p} />
+      </div>
+    </Link>
   );
 }
 
@@ -65,7 +131,6 @@ export function ProductListPage() {
   const [loading, setLoading] = useState(true);
   const [more, setMore] = useState(false);
   const [error, setError] = useState<unknown>(null);
-  const [draft, setDraft] = useState(q);
 
   const query = { q: q || undefined, category: category || undefined, min_price_cents: toCents(min), max_price_cents: toCents(max), sort };
   const key = JSON.stringify(query);
@@ -108,58 +173,58 @@ export function ProductListPage() {
     setParams(n, { replace: true });
   }
 
-  function submit(e: FormEvent) {
-    e.preventDefault();
-    set('q', draft.trim());
-  }
+  const catClass = (on: boolean) => cn('rounded-md px-3 py-2 text-left text-sm transition-colors', on ? 'bg-secondary font-medium text-primary' : 'hover:bg-muted');
 
   return (
     <>
-      <section className="pt-4 pb-2">
-        <h1 className="mb-1 text-4xl font-semibold tracking-tight sm:text-5xl">精選好物</h1>
-        <p className="mb-6 text-lg text-muted-foreground">為日常挑選的小物，簡單、耐用、好看。</p>
+      <section className="mb-4 grid gap-3 sm:grid-cols-[180px_1fr]">
+        <nav aria-label="商品分類" className="hidden flex-col gap-0.5 rounded-xl bg-card p-2 sm:flex">
+          <span className="px-3 pt-1 pb-2 text-xs font-medium text-muted-foreground">商品分類</span>
+          <button type="button" className={catClass(!category)} onClick={() => set('category', '')}>
+            全部分類
+          </button>
+          {CATEGORIES.map((c) => (
+            <button key={c} type="button" className={catClass(category === c)} aria-current={category === c || undefined} onClick={() => set('category', c)}>
+              {c}
+            </button>
+          ))}
+        </nav>
+        <Carousel />
+        <div className="-mx-3 flex gap-2 overflow-x-auto px-3 sm:hidden" aria-label="商品分類（手機）">
+          {['', ...CATEGORIES].map((c) => (
+            <button key={c || ALL} type="button" onClick={() => set('category', c)} className={cn('shrink-0 rounded-full px-3 py-1 text-sm', category === c ? 'bg-primary text-primary-foreground' : 'bg-card')}>
+              {c || '全部'}
+            </button>
+          ))}
+        </div>
       </section>
-      <form className="mb-6 grid grid-cols-2 gap-2.5 md:grid-cols-[1fr_auto_auto_auto_auto]" onSubmit={submit} role="search">
-        <div className="relative col-span-2 md:col-span-1">
-          <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-          <Input type="search" placeholder="搜尋商品…" aria-label="搜尋商品" className="h-10 pl-9" value={draft} onChange={(e) => setDraft(e.target.value)} />
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h1 className="text-lg font-bold">
+          精選好物
+          {q && <span className="ml-2 text-sm font-normal text-muted-foreground">「{q}」的搜尋結果</span>}
+        </h1>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1">
+            <Input type="number" min="0" inputMode="decimal" placeholder="最低價" aria-label="最低價（HK$）" className="h-8 w-20 bg-card" value={min} onChange={(e) => set('min', e.target.value)} />
+            <span className="text-muted-foreground" aria-hidden="true">
+              –
+            </span>
+            <Input type="number" min="0" inputMode="decimal" placeholder="最高價" aria-label="最高價（HK$）" className="h-8 w-20 bg-card" value={max} onChange={(e) => set('max', e.target.value)} />
+          </div>
+          <Select value={sort} onValueChange={(v) => set('sort', v)}>
+            <SelectTrigger aria-label="排序" className="h-8! w-32 bg-card">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {SORTS.map(([v, l]) => (
+                <SelectItem key={v} value={v}>
+                  {l}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
-        <Select value={category || ALL} onValueChange={(v) => set('category', v === ALL ? '' : v)}>
-          <SelectTrigger aria-label="分類" className="h-10! w-full md:w-32">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>全部分類</SelectItem>
-            {CATEGORIES.map((c) => (
-              <SelectItem key={c} value={c}>
-                {c}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={sort} onValueChange={(v) => set('sort', v)}>
-          <SelectTrigger aria-label="排序" className="h-10! w-full md:order-last md:w-36">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {SORTS.map(([v, l]) => (
-              <SelectItem key={v} value={v}>
-                {l}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <div className="col-span-2 flex items-center gap-1.5 md:col-span-1">
-          <Input type="number" min="0" inputMode="decimal" placeholder="最低價" aria-label="最低價（HK$）" className="h-10 md:w-24" value={min} onChange={(e) => set('min', e.target.value)} />
-          <span className="text-muted-foreground" aria-hidden="true">
-            –
-          </span>
-          <Input type="number" min="0" inputMode="decimal" placeholder="最高價" aria-label="最高價（HK$）" className="h-10 md:w-24" value={max} onChange={(e) => set('max', e.target.value)} />
-        </div>
-        <Button type="submit" className="col-span-2 h-10 px-5 md:order-last md:col-span-1">
-          搜尋
-        </Button>
-      </form>
+      </div>
       <ErrorNote error={error} />
       {loading ? (
         <GridSkeleton />
@@ -172,27 +237,10 @@ export function ProductListPage() {
         </Empty>
       ) : (
         <>
-          <ul className="grid grid-cols-2 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(230px,1fr))] sm:gap-5">
+          <ul className={GRID}>
             {items.map((p) => (
               <li key={p.id}>
-                <Link to={`/products/${p.id}`} className="group block rounded-xl focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none">
-                  <Card className="gap-0 py-0 transition-transform group-hover:-translate-y-0.5">
-                    <div className="aspect-square bg-muted">
-                      <img src={p.image_urls[0]} alt="" loading="lazy" className="size-full object-cover" />
-                    </div>
-                    <CardContent className="space-y-1 px-3 py-3 sm:px-4 sm:pb-4">
-                      <span className="text-xs text-muted-foreground">{p.category}</span>
-                      <h2 className="font-semibold">{p.name}</h2>
-                      <div className="flex flex-wrap items-center justify-between gap-1">
-                        <span className="font-semibold">
-                          {formatPrice(p.price_cents, p.currency)}
-                          {priceRange(p)[1] > priceRange(p)[0] && <span className="text-xs font-normal text-muted-foreground"> 起</span>}
-                        </span>
-                        <StockTag p={p} />
-                      </div>
-                    </CardContent>
-                  </Card>
-                </Link>
+                <ProductCard p={p} />
               </li>
             ))}
           </ul>
@@ -284,7 +332,7 @@ export function ProductDetailPage() {
     setMsg('');
   }
 
-  async function add() {
+  async function add(buyNow = false) {
     if (multi && !sku) {
       setHint(`請選擇${missing.join('、')}`);
       return;
@@ -296,6 +344,8 @@ export function ProductDetailPage() {
     try {
       await api.addCartItem(p!.id, qty, sku?.id ?? null);
       refreshCart();
+      // 立即購買: same add-to-cart, then straight to checkout.
+      if (buyNow) return nav('/checkout');
       setMsg('已加入購物車');
     } catch (e) {
       setAddErr(e);
@@ -316,9 +366,12 @@ export function ProductDetailPage() {
             <span className="text-sm text-muted-foreground">{p.category}</span>
             <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">{p.name}</h1>
           </div>
-          <p className="text-2xl font-semibold" data-testid="price" aria-live="polite">
-            {price}
-          </p>
+          <div className="flex items-baseline justify-between gap-3 rounded-lg bg-secondary/70 px-4 py-3">
+            <p className="text-3xl font-bold text-price" data-testid="price" aria-live="polite">
+              {price}
+            </p>
+            {p.sold_count !== undefined && <span className="text-sm text-muted-foreground">已售 {p.sold_count}</span>}
+          </div>
           <p className="text-muted-foreground">{p.description}</p>
           {multi && <SkuSelector product={p} selection={sel} onChange={pick} />}
           <p className="flex items-center gap-2 text-sm" data-testid="stock" aria-live="polite">
@@ -332,8 +385,13 @@ export function ProductDetailPage() {
               </Label>
               <Input id="qty" type="number" min={1} max={99} className="h-10 w-20" value={qty} onChange={(e) => setQty(Math.max(1, Math.min(99, Number(e.target.value) || 1)))} />
             </div>
-            <Button size="lg" className="h-10 px-6" onClick={add} disabled={busy || !inStock || !p.active}>
-              {busy ? '加入中…' : inStock ? '加入購物車' : '已售完'}
+          </div>
+          <div className="flex gap-0 overflow-hidden rounded-full sm:max-w-md">
+            <Button size="lg" className="tb-btn-cart h-11 flex-1 rounded-none text-base hover:opacity-90" onClick={() => add()} disabled={busy || !inStock || !p.active}>
+              {busy ? '處理中…' : inStock ? '加入購物車' : '已售完'}
+            </Button>
+            <Button size="lg" className="tb-btn-buy h-11 flex-1 rounded-none text-base hover:opacity-90" onClick={() => add(true)} disabled={busy || !inStock || !p.active}>
+              立即購買
             </Button>
           </div>
           {hint && (
