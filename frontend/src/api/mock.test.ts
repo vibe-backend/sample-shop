@@ -408,3 +408,23 @@ describe('address book (#44, §12 @a3d4304 planned routes)', () => {
     await expectCode(api.setDefaultAddress('addr_home'), 404, 'ADDRESS_NOT_FOUND');
   });
 });
+
+describe('order transition error precedence (#34): 403/422 → 404 → 409', () => {
+  it('checks role and body before existence, existence before state', async () => {
+    await loginAs('demo@example.com', 'demo1234');
+    await api.addCartItem('p_007', 1);
+    const mine = await api.createOrder(crypto.randomUUID(), A);
+    // buyer on staff route: 403 even for a missing order
+    await expectCode(api.updateStaffOrderStatus('nope', 'shipped'), 403, 'FORBIDDEN');
+    await loginAs('staff@example.com', 'staff1234');
+    // invalid body beats missing order
+    await expectCode(api.updateStaffOrderStatus('nope', 'delivered' as never), 422, 'VALIDATION_FAILED');
+    await expectCode(api.updateStaffOrderStatus('nope', 'shipped'), 404, 'NOT_FOUND');
+    await expectCode(api.updateStaffOrderStatus(mine.id, 'shipped'), 409, 'INVALID_TRANSITION');
+    // someone else's order is 404 for buyers, never 409
+    await expectCode(api.cancelOrder(mine.id), 404, 'NOT_FOUND');
+    await expectCode(api.confirmDelivery(mine.id), 404, 'NOT_FOUND');
+    await loginAs('demo@example.com', 'demo1234');
+    await expectCode(api.confirmDelivery(mine.id), 409, 'INVALID_TRANSITION');
+  });
+});

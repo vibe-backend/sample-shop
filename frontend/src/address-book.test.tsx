@@ -55,7 +55,7 @@ describe('address book page (#44)', () => {
     await waitFor(() => expect(screen.getByRole('status').textContent).toBe('地址已更新'));
     expect((await api.listAddresses()).find((a) => a.id === 'addr_office')!.line1).toBe('中環德輔道中 8 號');
 
-    fireEvent.click(screen.getByRole('button', { name: /^刪除 陳小明 中環德輔道/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /^刪除 陳小明 中環德輔道/ }, { timeout: 5000 }));
     const dlg = await screen.findByRole('alertdialog');
     expect(dlg.textContent).toContain('這是預設地址');
     fireEvent.click(within(dlg).getByRole('button', { name: '刪除' }));

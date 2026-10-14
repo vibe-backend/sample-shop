@@ -475,11 +475,12 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
       }),
     updateStaffOrderStatus: (oid, status) =>
       run(() => {
+        // Error order: 403/422 → 404 → 409 INVALID_TRANSITION.
         requireStaff();
+        if (status !== 'shipped' && status !== 'cancelled') throw err(422, 'VALIDATION_FAILED', '狀態無效');
         const o = allOrders().find((x) => x.id === oid);
         if (!o) throw err(404, 'NOT_FOUND', '找不到訂單');
         const live = (state.orders[o.buyer.id] ?? []).find((x) => x.id === oid)!;
-        if (status !== 'shipped' && status !== 'cancelled') throw err(422, 'VALIDATION_FAILED', '狀態無效');
         transition(live, status, 'staff');
         if (status === 'cancelled') restock(live);
         return { ...live, buyer: o.buyer };
