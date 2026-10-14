@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { CircleCheck } from 'lucide-react';
 import { api, formatPrice, type Order, type OrderStatus } from '../api';
 import { Empty, ErrorNote, PageTitle, Spinner, useAsync } from '../components/ui-helpers';
@@ -11,9 +11,11 @@ import { skuLabel } from '@/lib/sku';
 import { cn } from '@/lib/utils';
 import { BackLink } from './Products';
 import { AddressLines } from '../components/address';
+import { PAYMENT_LABEL, PaymentPicker } from '../components/payment';
+import { ApiRequestError, type PaymentMethod } from '../api';
 
 export const STATUS_LABEL: Record<OrderStatus, string> = {
-  pending: '待處理',
+  pending: '待付款',
   paid: '已付款',
   shipped: '已出貨',
   delivered: '已送達',
@@ -103,12 +105,12 @@ export function OrderDetailPage() {
   if (!o) return <ErrorNote error={error} />;
   return (
     <section>
-      {params.get('placed') && (
+      {params.get('paid') && o.status === 'paid' && (
         <div className="mb-5 flex items-center gap-4 rounded-xl border border-success/35 bg-success/10 p-5" role="status">
           <CircleCheck className="size-11 shrink-0 text-success" aria-hidden="true" />
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">訂單已成立</h1>
-            <p>感謝你的訂購！訂單編號 #{o.id}。</p>
+            <h1 className="text-2xl font-semibold tracking-tight">付款成功</h1>
+            <p>感謝你的訂購！訂單編號 #{o.id}，我們會盡快安排發貨。</p>
           </div>
         </div>
       )}
@@ -121,6 +123,21 @@ export function OrderDetailPage() {
             <StatusBadge status={o.status} />
           </CardAction>
         </CardHeader>
+        {o.status === 'pending' && (
+          <CardContent>
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-warning/10 p-3">
+              <span className="text-sm">此訂單尚未付款。</span>
+              <Button asChild>
+                <Link to={`/orders/${o.id}/pay`}>去付款</Link>
+              </Button>
+            </div>
+          </CardContent>
+        )}
+        {o.status === 'paid' && o.paid_at && (
+          <CardContent className="text-sm text-muted-foreground">
+            已於 {formatDate(o.paid_at)} 以{o.payment_method ? PAYMENT_LABEL[o.payment_method] : '模擬付款'}付款
+          </CardContent>
+        )}
         {o.shipping_address && (
           <CardContent>
             <h2 className="mb-1.5 text-sm font-medium text-muted-foreground">收貨地址</h2>
@@ -157,6 +174,85 @@ export function OrderDetailPage() {
               </TableRow>
             </TableFooter>
           </Table>
+        </CardContent>
+      </Card>
+    </section>
+  );
+}
+
+/** Simulated payment page (#30): choose a demo method, then force success or failure. */
+export function PayPage() {
+  const { id = '' } = useParams();
+  const [params] = useSearchParams();
+  const nav = useNavigate();
+  const [o, error, loading] = useAsync(() => api.getOrder(id), [id]);
+  const [picked, setPicked] = useState<PaymentMethod | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [payErr, setPayErr] = useState<unknown>(null);
+  if (loading) return <Spinner />;
+  if (!o) return <ErrorNote error={error} />;
+  const fromCheckout = params.get('method');
+  const method: PaymentMethod = picked ?? (fromCheckout === 'mock_alipay' || fromCheckout === 'mock_card' ? fromCheckout : 'mock_card');
+
+  async function pay(simulate: 'success' | 'failure') {
+    setBusy(true);
+    setPayErr(null);
+    try {
+      await api.payOrder(o!.id, { method, simulate }, crypto.randomUUID());
+      nav(`/orders/${o!.id}?paid=1`, { replace: true });
+    } catch (e) {
+      setPayErr(e);
+      setBusy(false);
+    }
+  }
+
+  if (o.status !== 'pending')
+    return (
+      <section>
+        <BackLink to={`/orders/${o.id}`}>訂單詳情</BackLink>
+        <p>此訂單{STATUS_LABEL[o.status]}，毋須付款。</p>
+      </section>
+    );
+
+  const declined = payErr instanceof ApiRequestError && payErr.code === 'PAYMENT_DECLINED';
+  return (
+    <section className="mx-auto max-w-xl">
+      {params.get('placed') && (
+        <div className="mb-5 flex items-center gap-4 rounded-xl border border-success/35 bg-success/10 p-4" role="status">
+          <CircleCheck className="size-9 shrink-0 text-success" aria-hidden="true" />
+          <div>
+            <h1 className="text-xl font-semibold tracking-tight">訂單已成立</h1>
+            <p className="text-sm">訂單編號 #{o.id}，請完成付款。</p>
+          </div>
+        </div>
+      )}
+      <BackLink to={`/orders/${o.id}`}>訂單詳情</BackLink>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">付款</CardTitle>
+          <CardDescription>訂單 #{o.id}</CardDescription>
+          <CardAction>
+            <span className="text-2xl font-bold text-price">{formatPrice(o.total_cents, o.currency)}</span>
+          </CardAction>
+        </CardHeader>
+        <CardContent className="grid gap-4">
+          <PaymentPicker value={method} onChange={setPicked} />
+          <p className="rounded-lg bg-muted p-3 text-xs text-muted-foreground">示範付款：不會收取真實款項，亦毋須輸入卡號。請選擇模擬結果。</p>
+          {declined ? (
+            <div role="alert" className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+              付款失敗（模擬）。訂單仍為「待付款」，你可以重試或更換付款方式。
+            </div>
+          ) : (
+            <ErrorNote error={payErr} />
+          )}
+          <div className="grid gap-2 sm:grid-cols-2">
+            <Button size="lg" className="h-11" onClick={() => pay('success')} disabled={busy}>
+              {busy ? '處理中…' : declined ? '重試：模擬付款成功' : '模擬付款成功'}
+            </Button>
+            <Button size="lg" variant="outline" className="h-11" onClick={() => pay('failure')} disabled={busy}>
+              模擬付款失敗
+            </Button>
+          </div>
         </CardContent>
       </Card>
     </section>

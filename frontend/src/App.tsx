@@ -21,7 +21,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger, SheetClose 
 import { cn } from '@/lib/utils';
 import { CartPage, CheckoutPage } from './pages/Cart';
 import { LoginPage, RegisterPage } from './pages/Auth';
-import { OrderDetailPage, OrdersPage } from './pages/Orders';
+import { OrderDetailPage, OrdersPage, PayPage } from './pages/Orders';
 import { ProductDetailPage, ProductListPage } from './pages/Products';
 import { StaffEditPage, StaffProductsPage } from './pages/Staff';
 import { useTheme, type Theme } from './theme';
@@ -247,6 +247,7 @@ export default function App() {
           <Route path="/checkout" element={<RequireAuth><CheckoutPage /></RequireAuth>} />
           <Route path="/orders" element={<RequireAuth><OrdersPage /></RequireAuth>} />
           <Route path="/orders/:id" element={<RequireAuth><OrderDetailPage /></RequireAuth>} />
+          <Route path="/orders/:id/pay" element={<RequireAuth><PayPage /></RequireAuth>} />
           <Route path="/account" element={<RequireAuth><AccountPage /></RequireAuth>} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />

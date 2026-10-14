@@ -1,8 +1,9 @@
 import { useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Minus, Plus } from 'lucide-react';
-import { ApiRequestError, api, formatPrice, type Address, type Cart } from '../api';
+import { ApiRequestError, api, formatPrice, type Address, type Cart, type PaymentMethod } from '../api';
 import { AddAddressButton, AddressDialog, AddressPicker } from '../components/address';
+import { PaymentPicker } from '../components/payment';
 import { useAuth } from '../auth';
 import { Empty, ErrorNote, PageTitle, Spinner, useAsync } from '../components/ui-helpers';
 import { Badge } from '@/components/ui/badge';
@@ -129,6 +130,7 @@ export function CheckoutPage() {
   // Default address preselected; the list is sorted default-first.
   const addressId = picked ?? addresses.find((a) => a.is_default)?.id ?? addresses[0]?.id ?? null;
   const [addOpen, setAddOpen] = useState(false);
+  const [method, setMethod] = useState<PaymentMethod>('mock_card');
   const [placeErr, setPlaceErr] = useState<unknown>(null);
 
   if (loading || addrLoading) return <Spinner />;
@@ -155,7 +157,8 @@ export function CheckoutPage() {
     try {
       const o = await api.createOrder(idemKey, { address_id: addressId });
       setCartCount(0);
-      nav(`/orders/${o.id}?placed=1`, { replace: true });
+      // The method travels to the pay page; order creation stays as in CONTRACT.md §2 #14 (no payment fields).
+      nav(`/orders/${o.id}/pay?placed=1&method=${method}`, { replace: true });
     } catch (e) {
       setPlaceErr(e);
       setBusy(false);
@@ -206,6 +209,13 @@ export function CheckoutPage() {
           </CardContent>
           <Separator />
           <CardHeader>
+            <CardTitle>付款方式</CardTitle>
+          </CardHeader>
+          <CardContent className="-mt-2">
+            <PaymentPicker value={method} onChange={setMethod} />
+          </CardContent>
+          <Separator />
+          <CardHeader>
             <CardTitle>商品</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
@@ -221,7 +231,7 @@ export function CheckoutPage() {
                 </li>
               ))}
             </ul>
-            <p className="pt-2 text-xs text-muted-foreground">合約暫未定義付款欄位；示範模式下單後狀態為「待處理」。</p>
+            <p className="pt-2 text-xs text-muted-foreground">示範模式：下單後會進入模擬付款頁，不會收取真實款項。</p>
           </CardContent>
         </Card>
         <Summary label="總計" cents={cart.subtotal_cents} currency={currency}>

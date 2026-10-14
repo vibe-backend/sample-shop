@@ -42,6 +42,8 @@ describe('checkout delivery address (#29)', () => {
     expect(radio(/中環/).getAttribute('aria-checked')).toBe('true');
     fireEvent.click(screen.getByRole('button', { name: '確認下單' }));
     await screen.findByText('訂單已成立', undefined, { timeout: 5000 });
+    fireEvent.click(screen.getByRole('button', { name: '模擬付款成功' }));
+    await screen.findByText('付款成功', undefined, { timeout: 5000 });
     expect(screen.getByText(/中環皇后大道中 99 號 30 樓/)).toBeTruthy();
   }, 20000);
 

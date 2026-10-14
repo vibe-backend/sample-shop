@@ -365,6 +365,8 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
         const order: Order = {
           id: id('ord'),
           status: 'pending',
+          payment_method: null,
+          paid_at: null,
           shipping_address: { recipient: addr.recipient, phone: addr.phone, region: addr.region, line1: addr.line1 },
           currency: cart.items[0].product.currency,
           items: cart.items.map((it) => ({ product_id: it.product.id, sku_id: it.sku?.id ?? null, sku_options: it.sku?.options ?? null, name: it.product.name, unit_price_cents: it.product.price_cents, quantity: it.quantity, line_total_cents: it.line_total_cents })),
@@ -382,6 +384,24 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
       run(() => {
         const o = (state.orders[currentUser().id] ?? []).find((x) => x.id === oid);
         if (!o) throw err(404, 'NOT_FOUND', '找不到訂單');
+        return o;
+      }),
+    payOrder: (oid, pay, key) =>
+      run(() => {
+        const u = currentUser();
+        if (!key) throw err(400, 'IDEMPOTENCY_KEY_REQUIRED', '缺少 Idempotency-Key');
+        const o = (state.orders[u.id] ?? []).find((x) => x.id === oid);
+        if (!o) throw err(404, 'NOT_FOUND', '找不到訂單');
+        const ik = `${u.id}:pay:${key}`;
+        // A replayed successful payment returns the order as-is.
+        if (state.idempotency[ik] === o.id && o.status === 'paid') return o;
+        if (pay.method !== 'mock_card' && pay.method !== 'mock_alipay') throw err(422, 'VALIDATION_FAILED', '付款方式無效');
+        if (o.status !== 'pending') throw err(409, 'ORDER_NOT_PAYABLE', o.status === 'paid' ? '此訂單已付款' : '此訂單不可付款');
+        if (pay.simulate === 'failure') throw err(402, 'PAYMENT_DECLINED', '付款失敗（模擬），請重試或更換付款方式');
+        o.payment_method = pay.method;
+        o.status = 'paid';
+        o.paid_at = new Date(now()).toISOString();
+        state.idempotency[ik] = o.id;
         return o;
       }),
     listAddresses: () => run(() => sortAddresses(addressesOf(currentUser().id))),

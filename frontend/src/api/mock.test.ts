@@ -293,3 +293,27 @@ describe('mock internals (#60 review)', () => {
     }
   });
 });
+
+describe('mock payment (#30)', () => {
+  beforeEach(() => loginAs('demo@example.com', 'demo1234'));
+  it('declines when simulated to fail, keeps pending, then succeeds', async () => {
+    await api.addCartItem('p_007', 1);
+    const o = await api.createOrder('pay-1', A);
+    expect(o).toMatchObject({ status: 'pending', paid_at: null });
+    await expectCode(api.payOrder(o.id, { method: 'mock_card', simulate: 'failure' }, 'k1'), 402, 'PAYMENT_DECLINED');
+    expect((await api.getOrder(o.id)).status).toBe('pending');
+    const paid = await api.payOrder(o.id, { method: 'mock_alipay', simulate: 'success' }, 'k2');
+    expect(paid).toMatchObject({ status: 'paid', payment_method: 'mock_alipay' });
+    expect(paid.paid_at).toBeTruthy();
+    // replay with the same key returns the paid order; a new key is rejected
+    expect((await api.payOrder(o.id, { method: 'mock_alipay', simulate: 'success' }, 'k2')).status).toBe('paid');
+    await expectCode(api.payOrder(o.id, { method: 'mock_card', simulate: 'success' }, 'k3'), 409, 'ORDER_NOT_PAYABLE');
+  });
+  it('validates key, order and method', async () => {
+    await api.addCartItem('p_007', 1);
+    const o = await api.createOrder('pay-2', A);
+    await expectCode(api.payOrder(o.id, { method: 'mock_card', simulate: 'success' }, ''), 400, 'IDEMPOTENCY_KEY_REQUIRED');
+    await expectCode(api.payOrder('nope', { method: 'mock_card', simulate: 'success' }, 'k'), 404, 'NOT_FOUND');
+    await expectCode(api.payOrder(o.id, { method: 'cash' as never, simulate: 'success' }, 'k'), 422, 'VALIDATION_FAILED');
+  });
+});

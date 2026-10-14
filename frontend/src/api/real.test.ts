@@ -38,3 +38,16 @@ describe('real adapter createOrder (CONTRACT.md §10 @47bc45e)', () => {
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('real adapter payOrder (#30)', () => {
+  it('POSTs the payment with an Idempotency-Key and surfaces PAYMENT_DECLINED', async () => {
+    const fetch = vi.fn().mockResolvedValue(json(402, { error: { code: 'PAYMENT_DECLINED', message: '付款失敗' } }));
+    vi.stubGlobal('fetch', fetch);
+    await expect(createRealApi('http://x', 'main').payOrder('ord_1', { method: 'mock_card', simulate: 'failure' }, 'pk')).rejects.toMatchObject({ status: 402, code: 'PAYMENT_DECLINED' });
+    const [url, init] = fetch.mock.calls[0];
+    expect(url).toBe('http://x/shop/v1/orders/ord_1/payments');
+    expect(init.method).toBe('POST');
+    expect(init.headers['Idempotency-Key']).toBe('pk');
+    expect(JSON.parse(init.body)).toEqual({ method: 'mock_card', simulate: 'failure' });
+  });
+});
