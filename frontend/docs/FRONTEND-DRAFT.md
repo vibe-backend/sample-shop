@@ -2,7 +2,7 @@
 
 This draft builds on the address, payment and order-status PR stack (#64 → #65 → #68 → #69).
 It implements the outstanding buyer features in mock mode so the frontend can be reviewed before backend work.
-It does not close the issues or change the existing backend source.
+Issues remain open until the draft is reviewed and merged. Backend source changes are in the separate follow-up #71.
 
 ## Issue coverage
 
@@ -23,8 +23,8 @@ It does not close the issues or change the existing backend source.
 | #51 | Points ledger; award once on completed orders; capped redemption; reversal on cancellation/refund | Production ledger and refund rules |
 | #52–#54 | Persisted mock customer-service chat; searchable FAQ by topic; footer and order-number mailto contact | Contact email is `support@example.com` (placeholder); no real seller inbox or chat transport |
 | #55–#58 | Per-item refund/return applications with reason and up to three images; staff decisions; buyer progress; refund amount; seven-day policy; return shipment after approval | Production refunds, return inventory accounting and object storage |
-| #61 | Staff SKU list/create/edit/enable/disable, schema and duplicate checks, optimistic version check, preserved order snapshots | HTTP If-Match SKU contract, server implementation and multi-client concurrency |
-| #66 | Available stock reserves at placement; 30-minute expiry; release on cancel/expiry; commit on payment; exclusive state transitions | Mock sweep runs on API activity and order-page polling. An external server scheduler must expire reservations while the browser is closed |
+| #61 | Staff SKU list/create/edit/enable/disable, schema and duplicate checks, optimistic version check, preserved order snapshots | Backend #71 defines If-Match routes/source and SQL constraints; compiled HTTP and tenant permissions still need verification |
+| #66 | Available stock reserves at placement; 30-minute expiry; release on cancel/expiry; commit on payment; exclusive state transitions | Mock sweep runs on API activity and order-page polling. Backend #71 adds an independent SQL worker; SDK schema/RLS and scheduler deployment remain pending |
 
 ## Demo policies
 
@@ -33,16 +33,16 @@ It does not close the issues or change the existing backend source.
 - Points: completed net merchandise HK$1 earns one point; one point redeems HK$1, capped at 10% of merchandise after promotion/coupon.
 - Coupons: each account can claim each seeded coupon once. An order consumes the coupon at creation, including unpaid/cancelled orders.
 - Pending orders reserve available stock for 30 minutes. Product stock represents available quantity; reserved_stock tracks held units. Payment commits the held quantity without a second decrement.
-- Returns allocate discounts across line items; refund totals cannot exceed paid merchandise. Shipping refunds are outside this draft.
+- After-sales refunds allocate discounts across line items and cover paid merchandise. Cancelling a paid order refunds the full total, including shipping, and settles its open after-sales requests.
 - No-reason return window starts at confirmed delivery. Other product-quality claims can still be submitted after that window.
 - SKU option edits that invalidate an active variant are rejected. Disable or update the variant first. SKU combinations are unique even when inactive; re-enable rather than duplicate.
 
 ## API boundary
 
-The existing deployed-contract fetch methods are retained. New ShopFeatures methods in real mode return 501 FEATURE_NOT_AVAILABLE instead of calling invented endpoints.
+The fetch adapter follows the agreed contract. New buyer ShopFeatures methods without a backend contract return 501 FEATURE_NOT_AVAILABLE in real mode; staff SKU routes use the #71 follow-up contract.
 Buy-now and partial checkout are explicitly refused in real mode so they cannot accidentally order the entire cart.
 The expanded types in src/api/features.ts and src/api/types.ts describe the proposed frontend contract, not a verified backend.
-Backend PR #62 remains a separate draft; its CONTRACT.md sections 4b/13 need a coordinated revision before production reservations.
+Backend PR #62 remains a separate draft. Follow-up #71 updates CONTRACT.md sections 4b/13 and adds reservation migrations, the expiry worker and staff SKU sources; SDK compilation and deployment verification remain pending.
 
 ## Validation
 
@@ -63,9 +63,9 @@ UI tests cover buy-now and selected checkout through order placement, gallery sw
 
 The draft now includes explicit previous/next banner controls, arrow-key search selection while focus stays in the search input, category-route filter clearing, and independent product review state when navigating between products.
 Cart initialization waits for authentication so the selected lines cannot reset during login bootstrap.
-Rejected cancellation preserves the existing order reason. Delivery points exclude prior refunds, and successive item refunds reverse the full remaining points balance without losing rounding.
+Rejected cancellation preserves the existing order reason. Cancelling a paid order settles open after-sales requests to prevent a second refund. Delivery points exclude prior refunds, and successive item refunds reverse the full remaining points balance without losing rounding.
 Staff SKU versions advance when checkout reserves or commits stock; stale inventory edits fail instead of restoring already-reserved availability.
 The real product editor reads inactive products from the staff endpoint and sends the exact response ETag in If-Match. Dedicated SKU routes are now wired to the backend follow-up contract. These HTTP routes still require a compiled backend.
 
-Validation: 136 frontend tests, ESLint/TypeScript, mock and real production builds. Backend follow-up adds PostgreSQL migrations and eight SQL/concurrency tests; SDK HTTP/RLS and deployed scheduling remain pending.
+Validation: 137 frontend tests, ESLint/TypeScript, mock and real production builds. Backend follow-up adds PostgreSQL migrations and eight SQL/concurrency tests; SDK HTTP/RLS and deployed scheduling remain pending.
 The frontend draft addresses the demo acceptance criteria for #7–#58 (excluding the previously completed #17). Backend-specific #61/#66 stay open for compiled and deployed verification.

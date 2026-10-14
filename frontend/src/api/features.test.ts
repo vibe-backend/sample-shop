@@ -437,3 +437,25 @@ it('invalidates a staff SKU version when checkout reserves its inventory', async
   await staff();
   await code(api.updateVariant('p_001', old.id, { stock: old.stock }, old.version ?? 1), 'PRECONDITION_FAILED');
 });
+
+it('settles open after-sales requests when cancellation refunds the paid order', async () => {
+  await customer();
+  const o = await order();
+  await api.payOrder(o.id, { method: 'mock_card', simulate: 'success' }, 'cancel-service-pay');
+  const service = await api.createAfterSale({
+    order_id: o.id,
+    item_index: 0,
+    type: 'refund',
+    reason: '商品問題',
+    description: '',
+    images: [],
+  });
+  await api.cancelOrder(o.id);
+  const [settled] = await api.listAfterSales(o.id);
+  expect(settled.status).toBe('refunded');
+  expect(settled.history.at(-1)?.message).toContain('全額退款');
+  await staff();
+  await code(api.decideAfterSale(service.id, 'approved', '再退款'), 'INVALID_TRANSITION');
+  await customer();
+  expect((await api.getOrder(o.id)).refunded_cents).toBe(o.total_cents);
+});

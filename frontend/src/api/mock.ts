@@ -261,7 +261,19 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
     releaseReservation(o);
     if (uid && o.points_used)
       recordPoints(state, uid, o.points_used, '取消訂單退回積分', o.id, new Date(now()).toISOString());
-    if (o.paid_at) o.refunded_cents = o.total_cents;
+    if (o.paid_at) {
+      o.refunded_cents = o.total_cents;
+      for (const service of state.afterSales ?? []) {
+        if (service.order_id === o.id && (service.status === 'pending' || service.status === 'approved')) {
+          service.status = 'refunded';
+          service.history.push({
+            at: new Date(now()).toISOString(),
+            status: 'refunded',
+            message: '訂單已取消並全額退款',
+          });
+        }
+      }
+    }
     for (const it of o.items) {
       const p = state.products.find((x) => x.id === it.product_id);
       if (!p) continue;
