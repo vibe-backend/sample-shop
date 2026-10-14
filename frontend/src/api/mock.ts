@@ -1,5 +1,5 @@
 import { lineTotal, subtotal } from './money';
-import { DEMO_USERS, type SeedUser, seedProducts } from './seed';
+import { DEMO_USERS, type SeedUser, seedProducts, syncVariantTotals } from './seed';
 import {
   ApiRequestError,
   type AuthToken,
@@ -8,6 +8,7 @@ import {
   type Page,
   type Product,
   type ProductQuery,
+  type ProductVariant,
   type ShopApi,
 } from './types';
 import { tokenStore } from './token';
@@ -15,6 +16,7 @@ import { tokenStore } from './token';
 interface StoredCartLine {
   id: string;
   product_id: string;
+  sku_id?: string | null;
   quantity: number;
 }
 
@@ -38,7 +40,8 @@ export interface MockOptions {
   now?: () => number;
 }
 
-const STORAGE_KEY = 'shop.mock.v1';
+// v2: products carry SKU variants (#17).
+const STORAGE_KEY = 'shop.mock.v2';
 const TOKEN_TTL_MS = 60 * 60 * 1000;
 const PAGE_SIZE = 8;
 const MAX_QTY = 99;
@@ -117,12 +120,16 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
     const items = lines.flatMap((l) => {
       const p = state.products.find((x) => x.id === l.product_id);
       if (!p) return [];
+      const v = l.sku_id ? p.variants?.find((x) => x.id === l.sku_id) : undefined;
+      if (l.sku_id && !v) return [];
+      const price = v?.price_cents ?? p.price_cents;
       return [
         {
           id: l.id,
           quantity: l.quantity,
-          line_total_cents: lineTotal(p.price_cents, l.quantity),
-          product: { id: p.id, slug: p.slug, name: p.name, price_cents: p.price_cents, currency: p.currency, image_url: p.image_urls[0] ?? null, in_stock: p.in_stock },
+          line_total_cents: lineTotal(price, l.quantity),
+          sku: v ? { id: v.id, options: v.options } : null,
+          product: { id: p.id, slug: p.slug, name: p.name, price_cents: price, currency: p.currency, image_url: v?.image_url ?? p.image_urls[0] ?? null, in_stock: v ? v.in_stock : p.in_stock },
         },
       ];
     });
@@ -131,10 +138,24 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
   function checkQty(q: number) {
     if (!Number.isInteger(q) || q < 1 || q > MAX_QTY) throw err(422, 'VALIDATION_ERROR', `數量必須介乎 1 至 ${MAX_QTY}`);
   }
-  function checkStock(p: Product, q: number) {
+  function checkStock(p: Product, q: number, v?: ProductVariant | null) {
     if (!p.active) throw err(409, 'PRODUCT_INACTIVE', `「${p.name}」已下架`);
-    if (p.stock < q) throw err(409, 'OUT_OF_STOCK', p.stock === 0 ? `「${p.name}」已售完` : `「${p.name}」庫存只剩 ${p.stock} 件`);
+    const stock = v ? v.stock : p.stock;
+    const label = v ? `「${p.name}」（${Object.values(v.options).join('／')}）` : `「${p.name}」`;
+    if (stock < q) throw err(409, 'OUT_OF_STOCK', stock === 0 ? `${label}已售完` : `${label}庫存只剩 ${stock} 件`);
   }
+  /** Resolves the SKU for a cart add: required iff the product has variants. */
+  function resolveSku(p: Product, skuId?: string | null): ProductVariant | null {
+    if (!p.variants?.length) {
+      if (skuId) throw err(404, 'SKU_NOT_FOUND', '找不到此規格');
+      return null;
+    }
+    if (!skuId) throw err(422, 'SKU_REQUIRED', '請先選擇商品規格');
+    const v = p.variants.find((x) => x.id === skuId);
+    if (!v) throw err(404, 'SKU_NOT_FOUND', '找不到此規格');
+    return v;
+  }
+  const skuOf = (p: Product, skuId?: string | null) => (skuId ? (p.variants?.find((x) => x.id === skuId) ?? null) : null);
   function paginate<T>(all: T[], cursor?: string, limit = PAGE_SIZE): Page<T> {
     const start = cursor ? Number.parseInt(atob(cursor), 10) : 0;
     if (Number.isNaN(start) || start < 0) throw err(400, 'INVALID_CURSOR', '分頁參數無效');
@@ -191,18 +212,20 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
       }),
     getProduct: (pid) => run(() => findProduct(pid)),
     getCart: () => run(() => cartOf(currentUser().id)),
-    addCartItem: (pid, quantity) =>
+    addCartItem: (pid, quantity, skuId) =>
       run(() => {
         const u = currentUser();
         checkQty(quantity);
         const p = findProduct(pid, false);
+        const v = resolveSku(p, skuId);
         const lines = (state.carts[u.id] ??= []);
-        const existing = lines.find((l) => l.product_id === p.id);
+        // Same product + same SKU accumulates; a different SKU is its own line.
+        const existing = lines.find((l) => l.product_id === p.id && (l.sku_id ?? null) === (v?.id ?? null));
         const next = (existing?.quantity ?? 0) + quantity;
         checkQty(next);
-        checkStock(p, next);
+        checkStock(p, next, v);
         if (existing) existing.quantity = next;
-        else lines.push({ id: id('ci'), product_id: p.id, quantity });
+        else lines.push({ id: id('ci'), product_id: p.id, sku_id: v?.id ?? null, quantity });
         return cartOf(u.id);
       }),
     updateCartItem: (itemId, quantity) =>
@@ -211,7 +234,8 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
         checkQty(quantity);
         const line = (state.carts[u.id] ?? []).find((l) => l.id === itemId);
         if (!line) throw err(404, 'NOT_FOUND', '購物車沒有此項目');
-        checkStock(findProduct(line.product_id, true), quantity);
+        const lp = findProduct(line.product_id, true);
+        checkStock(lp, quantity, skuOf(lp, line.sku_id));
         line.quantity = quantity;
         return cartOf(u.id);
       }),
@@ -231,17 +255,27 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
         if (prev) return (state.orders[u.id] ?? []).find((o) => o.id === prev)!;
         const cart = cartOf(u.id);
         if (!cart.items.length) throw err(422, 'CART_EMPTY', '購物車是空的');
-        for (const it of cart.items) checkStock(findProduct(it.product.id, true), it.quantity);
         for (const it of cart.items) {
           const p = findProduct(it.product.id, true);
-          p.stock -= it.quantity;
-          p.in_stock = p.stock > 0;
+          checkStock(p, it.quantity, skuOf(p, it.sku?.id));
+        }
+        for (const it of cart.items) {
+          const p = findProduct(it.product.id, true);
+          const v = skuOf(p, it.sku?.id);
+          if (v) {
+            v.stock -= it.quantity;
+            v.in_stock = v.stock > 0;
+            syncVariantTotals(p);
+          } else {
+            p.stock -= it.quantity;
+            p.in_stock = p.stock > 0;
+          }
         }
         const order: Order = {
           id: id('ord'),
           status: 'pending',
           currency: cart.items[0].product.currency,
-          items: cart.items.map((it) => ({ product_id: it.product.id, name: it.product.name, unit_price_cents: it.product.price_cents, quantity: it.quantity, line_total_cents: it.line_total_cents })),
+          items: cart.items.map((it) => ({ product_id: it.product.id, sku_id: it.sku?.id ?? null, sku_options: it.sku?.options ?? null, name: it.product.name, unit_price_cents: it.product.price_cents, quantity: it.quantity, line_total_cents: it.line_total_cents })),
           total_cents: cart.subtotal_cents,
           created_at: new Date(now()).toISOString(),
         };
@@ -274,6 +308,7 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
         if (patch.slug && state.products.some((x) => x.slug === patch.slug && x.id !== p.id)) throw err(409, 'SLUG_TAKEN', '此 slug 已被使用');
         Object.assign(p, patch);
         p.in_stock = p.stock > 0;
+        syncVariantTotals(p);
         return p;
       }),
     deleteProduct: (pid) =>

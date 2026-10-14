@@ -81,9 +81,9 @@ describe('mock adapter persistence', () => {
     const api = createMockApi({ persist: true });
     const t = await api.login({ email: 'demo@example.com', password: 'demo1234' });
     tokenStore.set(t);
-    await api.addCartItem('p_001', 1);
-    const saved = ls.getItem('shop.mock.v1') ?? '';
-    expect(saved).toContain('p_001');
+    await api.addCartItem('p_007', 1);
+    const saved = ls.getItem('shop.mock.v2') ?? '';
+    expect(saved).toContain('p_007');
     expect(saved).not.toContain(t.access_token);
     // A "reload": new adapter from the same storage has the cart but no session.
     const reloaded = createMockApi({ persist: true, getToken: () => t.access_token });

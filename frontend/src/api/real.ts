@@ -62,7 +62,8 @@ export function createRealApi(baseUrl: string, slug: string): ShopApi {
     },
     getProduct: (id) => req<Product>('GET', `${cat}/${encodeURIComponent(id)}`),
     getCart: () => req<Cart>('GET', '/shop/v1/cart-items'),
-    addCartItem: (product_id, quantity) => req<Cart>('POST', '/shop/v1/cart-items', { product_id, quantity }),
+    addCartItem: (product_id, quantity, sku_id) =>
+      req<Cart>('POST', '/shop/v1/cart-items', sku_id ? { product_id, sku_id, quantity } : { product_id, quantity }),
     updateCartItem: (id, quantity) => req<Cart>('PATCH', `/shop/v1/cart-items/${encodeURIComponent(id)}`, { quantity }),
     removeCartItem: (id) => req<Cart>('DELETE', `/shop/v1/cart-items/${encodeURIComponent(id)}`),
     createOrder: (key) => req<Order>('POST', '/shop/v1/orders', {}, { 'Idempotency-Key': key }),

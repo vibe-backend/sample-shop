@@ -1,4 +1,4 @@
-import type { Product, Role } from './types';
+import type { Product, ProductOption, ProductVariant, Role } from './types';
 
 export interface SeedUser {
   id: string;
@@ -52,5 +52,55 @@ export function seedProducts(now = Date.UTC(2026, 9, 1)): Product[] {
     in_stock: stock > 0,
     active,
     created_at: new Date(now - (ROWS.length - i) * 86_400_000).toISOString(),
+  })).map(withVariants);
+}
+
+type VariantSeed = { options: ProductOption[]; rows: [values: string[], price: number, stock: number][] };
+
+/** Demo SKUs (#17), keyed by slug. Stock 0 rows show as unselectable. */
+const VARIANTS: Record<string, VariantSeed> = {
+  'linen-tote': {
+    options: [
+      { name: '顏色', values: ['米白', '黑色', '橄欖綠'] },
+      { name: '尺寸', values: ['標準', '大'] },
+    ],
+    rows: [
+      [['米白', '標準'], 32000, 6],
+      [['米白', '大'], 36000, 4],
+      [['黑色', '標準'], 32000, 5],
+      [['黑色', '大'], 36000, 0],
+      [['橄欖綠', '標準'], 34000, 0],
+      [['橄欖綠', '大'], 38000, 0],
+    ],
+  },
+  'ceramic-mug': {
+    options: [{ name: '顏色', values: ['霧白', '墨黑', '青瓷'] }],
+    rows: [
+      [['霧白'], 18800, 12],
+      [['墨黑'], 18800, 12],
+      [['青瓷'], 21800, 0],
+    ],
+  },
+};
+
+function withVariants(p: Product): Product {
+  const seed = VARIANTS[p.slug];
+  if (!seed) return p;
+  const variants: ProductVariant[] = seed.rows.map(([vals, price, stock], i) => ({
+    id: `${p.id}_sku${i + 1}`,
+    options: Object.fromEntries(seed.options.map((o, j) => [o.name, vals[j]])),
+    price_cents: price,
+    stock,
+    in_stock: stock > 0,
   }));
+  return syncVariantTotals({ ...p, options: seed.options, variants });
+}
+
+/** Product-level price/stock mirror the SKUs: lowest price, summed stock. */
+export function syncVariantTotals(p: Product): Product {
+  if (!p.variants?.length) return p;
+  p.stock = p.variants.reduce((s, v) => s + v.stock, 0);
+  p.in_stock = p.stock > 0;
+  p.price_cents = Math.min(...p.variants.map((v) => v.price_cents));
+  return p;
 }

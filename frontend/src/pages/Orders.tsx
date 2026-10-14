@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { skuLabel } from '@/lib/sku';
 import { cn } from '@/lib/utils';
 import { BackLink } from './Products';
 
@@ -131,8 +132,11 @@ export function OrderDetailPage() {
             </TableHeader>
             <TableBody>
               {o.items.map((it) => (
-                <TableRow key={it.product_id}>
-                  <TableCell>{it.name}</TableCell>
+                <TableRow key={`${it.product_id}:${it.sku_id ?? ''}`}>
+                  <TableCell>
+                    <div>{it.name}</div>
+                    {it.sku_options && <div className="text-xs text-muted-foreground">{skuLabel(it.sku_options)}</div>}
+                  </TableCell>
                   <TableCell>{formatPrice(it.unit_price_cents, o.currency)}</TableCell>
                   <TableCell>{it.quantity}</TableCell>
                   <TableCell className="text-right">{formatPrice(it.line_total_cents, o.currency)}</TableCell>

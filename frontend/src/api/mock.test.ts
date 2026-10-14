@@ -80,19 +80,19 @@ describe('cart and orders', () => {
   beforeEach(() => loginAs('demo@example.com', 'demo1234'));
 
   it('increments quantity when the same product is added again', async () => {
-    await api.addCartItem('p_001', 2);
-    const cart = await api.addCartItem('p_001', 1);
+    await api.addCartItem('p_007', 2);
+    const cart = await api.addCartItem('p_007', 1);
     expect(cart.items).toHaveLength(1);
     expect(cart.items[0].quantity).toBe(3);
-    expect(cart.items[0].line_total_cents).toBe(3 * 18800);
+    expect(cart.items[0].line_total_cents).toBe(3 * 42000);
   });
 
   it('keeps subtotal equal to the sum of line totals', async () => {
-    await api.addCartItem('p_001', 2);
+    await api.addCartItem('p_007', 2);
     const cart = await api.addCartItem('p_004', 3);
-    expect(cart.subtotal_cents).toBe(2 * 18800 + 3 * 9800);
+    expect(cart.subtotal_cents).toBe(2 * 42000 + 3 * 9800);
     const updated = await api.updateCartItem(cart.items[1].id, 1);
-    expect(updated.subtotal_cents).toBe(2 * 18800 + 9800);
+    expect(updated.subtotal_cents).toBe(2 * 42000 + 9800);
   });
 
   it('rejects out-of-stock with 409 OUT_OF_STOCK', async () => {
@@ -115,5 +115,33 @@ describe('cart and orders', () => {
 
   it('forbids product management for non-staff', async () => {
     await expectCode(api.deleteProduct('p_001'), 403, 'FORBIDDEN');
+  });
+
+  it('requires a SKU for products with variants (422 SKU_REQUIRED)', async () => {
+    await expectCode(api.addCartItem('p_003', 1), 422, 'SKU_REQUIRED');
+    await expectCode(api.addCartItem('p_003', 1, 'nope'), 404, 'SKU_NOT_FOUND');
+  });
+
+  it('lists different SKUs of one product as separate cart lines with SKU price', async () => {
+    await api.addCartItem('p_003', 1, 'p_003_sku1');
+    await api.addCartItem('p_003', 1, 'p_003_sku2');
+    const cart = await api.addCartItem('p_003', 1, 'p_003_sku1');
+    expect(cart.items).toHaveLength(2);
+    expect(cart.items[0]).toMatchObject({ quantity: 2, sku: { id: 'p_003_sku1', options: { 顏色: '米白', 尺寸: '標準' } }, line_total_cents: 64000 });
+    expect(cart.items[1]).toMatchObject({ quantity: 1, sku: { options: { 尺寸: '大' } }, line_total_cents: 36000 });
+  });
+
+  it('checks stock per SKU', async () => {
+    await expectCode(api.addCartItem('p_003', 1, 'p_003_sku4'), 409, 'OUT_OF_STOCK');
+    await expectCode(api.addCartItem('p_003', 7, 'p_003_sku1'), 409, 'OUT_OF_STOCK');
+  });
+
+  it('snapshots SKU options on orders and decrements SKU stock', async () => {
+    await api.addCartItem('p_003', 2, 'p_003_sku2');
+    const o = await api.createOrder('k-sku');
+    expect(o.items[0]).toMatchObject({ sku_id: 'p_003_sku2', sku_options: { 顏色: '米白', 尺寸: '大' }, unit_price_cents: 36000 });
+    const p = await api.getProduct('p_003');
+    expect(p.variants!.find((v) => v.id === 'p_003_sku2')!.stock).toBe(2);
+    expect(p.stock).toBe(13);
   });
 });

@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
+import { skuLabel } from '@/lib/sku';
 
 function Summary({ label, cents, currency, children }: { label: string; cents: number; currency?: string; children: ReactNode }) {
   return (
@@ -77,6 +78,7 @@ export function CartPage() {
                       <Link to={`/products/${it.product.id}`} className="font-semibold hover:underline">
                         {it.product.name}
                       </Link>
+                      {it.sku && <span className="text-sm text-muted-foreground">{skuLabel(it.sku.options)}</span>}
                       <span className="text-sm text-muted-foreground">單價 {formatPrice(it.product.price_cents, it.product.currency)}</span>
                       {!it.product.in_stock && <Badge className="bg-warning/15 text-warning">已售完</Badge>}
                     </div>
@@ -167,7 +169,8 @@ export function CheckoutPage() {
               {cart.items.map((it) => (
                 <li key={it.id} className="flex justify-between gap-3">
                   <span>
-                    {it.product.name} × {it.quantity}
+                    {it.product.name}
+                    {it.sku && <span className="text-muted-foreground">（{skuLabel(it.sku.options)}）</span>} × {it.quantity}
                   </span>
                   <span className="tabular-nums">{formatPrice(it.line_total_cents, currency)}</span>
                 </li>

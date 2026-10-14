@@ -2,6 +2,8 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ChevronLeft, Search } from 'lucide-react';
 import { api, formatPrice, type Product, type ProductSort } from '../api';
+import { findVariant, hasVariants, isValueAvailable, missingOptions, priceRange, type Selection } from '@/lib/sku';
+import { cn } from '@/lib/utils';
 import { useAuth } from '../auth';
 import { Empty, ErrorNote, Spinner, useAsync } from '../components/ui-helpers';
 import { Badge } from '@/components/ui/badge';
@@ -182,7 +184,10 @@ export function ProductListPage() {
                       <span className="text-xs text-muted-foreground">{p.category}</span>
                       <h2 className="font-semibold">{p.name}</h2>
                       <div className="flex flex-wrap items-center justify-between gap-1">
-                        <span className="font-semibold">{formatPrice(p.price_cents, p.currency)}</span>
+                        <span className="font-semibold">
+                          {formatPrice(p.price_cents, p.currency)}
+                          {priceRange(p)[1] > priceRange(p)[0] && <span className="text-xs font-normal text-muted-foreground"> 起</span>}
+                        </span>
                         <StockTag p={p} />
                       </div>
                     </CardContent>
@@ -214,26 +219,82 @@ export function BackLink({ to, children }: { to: string; children: string }) {
   );
 }
 
+/** Taobao-style spec picker: one toggle-button group per spec; unbuyable values are disabled. */
+export function SkuSelector({ product, selection, onChange }: { product: Product; selection: Selection; onChange: (s: Selection) => void }) {
+  return (
+    <div className="space-y-3">
+      {product.options!.map((o) => (
+        <div key={o.name} role="radiogroup" aria-label={o.name} className="grid gap-1.5">
+          <span className="text-xs text-muted-foreground">{o.name}</span>
+          <div className="flex flex-wrap gap-2">
+            {o.values.map((v) => {
+              const selected = selection[o.name] === v;
+              const available = isValueAvailable(product, selection, o.name, v);
+              return (
+                <Button
+                  key={v}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  variant={selected ? 'default' : 'outline'}
+                  size="sm"
+                  disabled={!available && !selected}
+                  title={available ? undefined : '缺貨'}
+                  className={cn('min-w-14', !available && 'line-through')}
+                  onClick={() => onChange({ ...selection, [o.name]: selected ? undefined : v })}
+                >
+                  {v}
+                </Button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function ProductDetailPage() {
   const { id = '' } = useParams();
   const { me, refreshCart } = useAuth();
   const nav = useNavigate();
   const [p, error, loading] = useAsync(() => api.getProduct(id), [id]);
   const [qty, setQty] = useState(1);
+  const [sel, setSel] = useState<Selection>({});
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
+  const [hint, setHint] = useState('');
   const [addErr, setAddErr] = useState<unknown>(null);
 
   if (loading) return <Spinner />;
   if (!p) return <ErrorNote error={error} />;
 
+  const multi = hasVariants(p);
+  const sku = multi ? findVariant(p, sel) : null;
+  const missing = multi ? missingOptions(p, sel) : [];
+  const [lo, hi] = priceRange(p);
+  const price = sku ? formatPrice(sku.price_cents, p.currency) : lo === hi ? formatPrice(lo, p.currency) : `${formatPrice(lo, p.currency)} – ${formatPrice(hi, p.currency)}`;
+  const stock = sku ? sku.stock : p.stock;
+  const inStock = sku ? sku.in_stock : p.in_stock;
+  const image = sku?.image_url || p.image_urls[0];
+
+  function pick(next: Selection) {
+    setSel(next);
+    setHint('');
+    setMsg('');
+  }
+
   async function add() {
+    if (multi && !sku) {
+      setHint(`請選擇${missing.join('、')}`);
+      return;
+    }
     if (!me) return nav(`/login?next=${encodeURIComponent(`/products/${id}`)}`);
     setBusy(true);
     setAddErr(null);
     setMsg('');
     try {
-      await api.addCartItem(p!.id, qty);
+      await api.addCartItem(p!.id, qty, sku?.id ?? null);
       refreshCart();
       setMsg('已加入購物車');
     } catch (e) {
@@ -248,17 +309,21 @@ export function ProductDetailPage() {
       <BackLink to="/">返回商品</BackLink>
       <div className="grid items-start gap-6 md:grid-cols-[1.1fr_1fr] md:gap-12">
         <div className="overflow-hidden rounded-3xl bg-muted">
-          <img src={p.image_urls[0]} alt={p.name} className="w-full" />
+          <img src={image} alt={p.name} className="w-full" />
         </div>
         <div className="space-y-4">
           <div>
             <span className="text-sm text-muted-foreground">{p.category}</span>
             <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">{p.name}</h1>
           </div>
-          <p className="text-2xl font-semibold">{formatPrice(p.price_cents, p.currency)}</p>
+          <p className="text-2xl font-semibold" data-testid="price" aria-live="polite">
+            {price}
+          </p>
           <p className="text-muted-foreground">{p.description}</p>
-          <p className="flex items-center gap-2 text-sm">
-            {p.in_stock ? `庫存 ${p.stock} 件` : '目前缺貨'} <StockTag p={p} />
+          {multi && <SkuSelector product={p} selection={sel} onChange={pick} />}
+          <p className="flex items-center gap-2 text-sm" data-testid="stock" aria-live="polite">
+            {!inStock ? '目前缺貨' : multi && !sku ? `請選擇${missing.join('、')}（共 ${stock} 件）` : `庫存 ${stock} 件`}{' '}
+            <StockTag p={{ active: p.active, in_stock: inStock, stock }} />
           </p>
           <div className="flex items-end gap-3 pt-2">
             <div className="grid gap-1.5">
@@ -267,10 +332,15 @@ export function ProductDetailPage() {
               </Label>
               <Input id="qty" type="number" min={1} max={99} className="h-10 w-20" value={qty} onChange={(e) => setQty(Math.max(1, Math.min(99, Number(e.target.value) || 1)))} />
             </div>
-            <Button size="lg" className="h-10 px-6" onClick={add} disabled={busy || !p.in_stock || !p.active}>
-              {busy ? '加入中…' : p.in_stock ? '加入購物車' : '已售完'}
+            <Button size="lg" className="h-10 px-6" onClick={add} disabled={busy || !inStock || !p.active}>
+              {busy ? '加入中…' : inStock ? '加入購物車' : '已售完'}
             </Button>
           </div>
+          {hint && (
+            <p className="text-sm text-destructive" role="alert">
+              {hint}
+            </p>
+          )}
           {msg && (
             <p className="text-sm text-success" role="status">
               {msg}・
