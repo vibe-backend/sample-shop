@@ -72,7 +72,7 @@ function HeaderSearch({ className }: { className?: string }) {
     nav(s ? `/?${s}` : '/');
   }
   return (
-    <form role="search" onSubmit={submit} className={cn('flex h-10 items-stretch rounded-full border-2 border-primary bg-card', className)}>
+    <form role="search" onSubmit={submit} className={cn('flex h-10 items-stretch rounded-full border-2 border-brand bg-card focus-within:ring-3 focus-within:ring-ring/50', className)}>
       <Search className="my-auto ml-3 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
       <Input type="search" placeholder="搜尋商品…" aria-label="搜尋商品" className="h-full flex-1 border-0 bg-transparent shadow-none focus-visible:ring-0 dark:bg-transparent" value={draft} onChange={(e) => setDraft(e.target.value)} />
       <Button type="submit" className="m-0.5 h-auto rounded-full px-5 sm:px-7">
@@ -88,9 +88,9 @@ function AccountPage() {
   const nav = useNavigate();
   return (
     <section className="mx-auto grid max-w-md gap-3">
-      <div className="rounded-xl bg-gradient-to-r from-[#ff9000] to-primary p-5 text-white">
+      <div className="rounded-xl bg-gradient-to-r from-[#c43c00] to-[#9e2f00] p-5 text-white">
         <div className="text-lg font-semibold">{me?.display_name}</div>
-        <div className="text-sm opacity-90">{me?.email}</div>
+        <div className="text-sm">{me?.email}</div>
       </div>
       <nav className="grid divide-y rounded-xl bg-card" aria-label="帳戶">
         <Link to="/orders" className="px-4 py-3">我的訂單</Link>

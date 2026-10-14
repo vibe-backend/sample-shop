@@ -53,7 +53,7 @@ The real adapter (`src/api/real.ts`) is written against the contract but has not
 
 Order creation always sends an `Idempotency-Key` (required, §10 @47bc45e); on `503 TX_CONFLICT` or a network error the real adapter retries up to twice with the same key after `Retry-After`.
 
-**Delivery addresses (#29): real mode defined but unverified.** `GET/POST /shop/v1/addresses` and the required `address_id` on order creation follow `backend/CONTRACT.md` §12 @aec9631; the backend does not compile yet, so this has only been exercised in mock mode.
+**Delivery addresses (#29): real mode defined but unverified.** `GET/POST /shop/v1/addresses` and the required `address_id` on order creation follow `backend/CONTRACT.md` §12 @42a33ae; the backend does not compile yet, so this has only been exercised in mock mode.
 
 Mock data is stored in `localStorage` under `shop.mock.v2`. Data from the older `shop.mock.v1` key is migrated once on load (users, orders and staff edits kept; demo SKUs attached; cart lines for products that now need a spec are dropped) and the old key is removed. Migrated users get no demo addresses (only a fresh seed has them), so they add one at checkout.
 

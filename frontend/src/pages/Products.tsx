@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ChevronLeft } from 'lucide-react';
+import { ChevronLeft, Pause, Play } from 'lucide-react';
 import { api, formatPrice, type Product, type ProductSort } from '../api';
 import { findVariant, hasVariants, isValueAvailable, missingOptions, priceRange, type Selection } from '@/lib/sku';
 import { cn } from '@/lib/utils';
@@ -53,35 +53,62 @@ function GridSkeleton() {
   );
 }
 
-/** Our own generated banner art: gradient + emoji, no third-party images or marks. */
+/** Our own generated banner art: gradient + emoji, no third-party images or marks. Stops keep white text ≥5.5:1. */
 const SLIDES = [
-  { title: '秋日家居節', sub: '香氛、燈具、毛毯 精選推介', emoji: '🕯️', from: '#ff9000', to: '#ff5000' },
-  { title: '文具新學期', sub: '筆記本、鋼筆 一站買齊', emoji: '📓', from: '#ff4d6a', to: '#ff7a00' },
-  { title: '咖啡生活', sub: '手沖入門組 新手必備', emoji: '☕', from: '#ffb000', to: '#ff6a1f' },
+  { title: '秋日家居節', sub: '香氛、燈具、毛毯 精選推介', emoji: '🕯️', from: '#c43c00', to: '#9e2f00' },
+  { title: '文具新學期', sub: '筆記本、鋼筆 一站買齊', emoji: '📓', from: '#c4002a', to: '#a33a00' },
+  { title: '咖啡生活', sub: '手沖入門組 新手必備', emoji: '☕', from: '#b34700', to: '#8f2a00' },
 ];
 
 export function Carousel() {
   const [i, setI] = useState(0);
+  const reduced = typeof globalThis.matchMedia === 'function' && globalThis.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // WCAG 2.2.2: user pause, plus automatic pause while hovered or focused.
+  const [paused, setPaused] = useState(reduced);
+  const [hover, setHover] = useState(false);
+  const [focus, setFocus] = useState(false);
+  const rotating = !paused && !hover && !focus;
   useEffect(() => {
-    if (globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    if (!rotating) return;
     const t = setInterval(() => setI((x) => (x + 1) % SLIDES.length), 5000);
     return () => clearInterval(t);
-  }, []);
+  }, [rotating]);
   const sl = SLIDES[i];
   return (
-    <div className="relative overflow-hidden rounded-xl" role="region" aria-roledescription="carousel" aria-label="推介">
-      <div key={i} className="flex h-40 items-center justify-between px-6 text-white motion-safe:animate-[tb-fade_.5s_ease] sm:h-full sm:min-h-64 sm:px-10" style={{ background: `linear-gradient(120deg, ${sl.from}, ${sl.to})` }} aria-live="polite">
+    <div
+      className="relative overflow-hidden rounded-xl"
+      role="region"
+      aria-roledescription="carousel"
+      aria-label="推介"
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      onFocus={() => setFocus(true)}
+      onBlur={(e) => !e.currentTarget.contains(e.relatedTarget as Node | null) && setFocus(false)}
+    >
+      <div
+        key={i}
+        aria-live={rotating ? 'off' : 'polite'}
+        aria-roledescription="slide"
+        aria-label={`第 ${i + 1} 張，共 ${SLIDES.length} 張`}
+        className="flex h-40 items-center justify-between px-6 text-white motion-safe:animate-[tb-fade_.5s_ease] sm:h-full sm:min-h-64 sm:px-10"
+        style={{ background: `linear-gradient(120deg, ${sl.from}, ${sl.to})` }}
+      >
         <div>
           <p className="text-2xl font-bold sm:text-4xl">{sl.title}</p>
-          <p className="mt-1 text-sm opacity-90 sm:text-lg">{sl.sub}</p>
+          <p className="mt-1 text-sm sm:text-lg">{sl.sub}</p>
         </div>
         <span className="text-6xl sm:text-8xl" aria-hidden="true">
           {sl.emoji}
         </span>
       </div>
-      <div className="absolute inset-x-0 bottom-2 flex justify-center gap-1.5">
+      <div className="absolute inset-x-0 bottom-1 flex items-center justify-center gap-0.5">
+        <button type="button" onClick={() => setPaused((p) => !p)} aria-label={paused ? '播放輪播' : '暫停輪播'} className="grid size-6 place-items-center rounded-full text-white hover:bg-white/20 focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none">
+          {paused ? <Play className="size-3.5" aria-hidden="true" /> : <Pause className="size-3.5" aria-hidden="true" />}
+        </button>
         {SLIDES.map((x, j) => (
-          <button key={x.title} type="button" aria-label={`第 ${j + 1} 張`} aria-current={j === i} onClick={() => setI(j)} className={cn('h-1.5 rounded-full bg-white/60 transition-all', j === i ? 'w-5 bg-white' : 'w-1.5')} />
+          <button key={x.title} type="button" aria-label={`第 ${j + 1} 張`} aria-current={j === i} onClick={() => setI(j)} className="grid h-6 min-w-6 place-items-center rounded-full focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none">
+            <span className={cn('block h-1.5 rounded-full bg-white/70 transition-all', j === i ? 'w-5 bg-white' : 'w-1.5')} />
+          </button>
         ))}
       </div>
     </div>
@@ -387,10 +414,10 @@ export function ProductDetailPage() {
             </div>
           </div>
           <div className="flex gap-0 overflow-hidden rounded-full sm:max-w-md">
-            <Button size="lg" className="tb-btn-cart h-11 flex-1 rounded-none text-base hover:opacity-90" onClick={() => add()} disabled={busy || !inStock || !p.active}>
+            <Button size="lg" className="tb-btn-cart h-11 text-[#3d1f00] flex-1 rounded-none text-base hover:brightness-95" onClick={() => add()} disabled={busy || !inStock || !p.active}>
               {busy ? '處理中…' : inStock ? '加入購物車' : '已售完'}
             </Button>
-            <Button size="lg" className="tb-btn-buy h-11 flex-1 rounded-none text-base hover:opacity-90" onClick={() => add(true)} disabled={busy || !inStock || !p.active}>
+            <Button size="lg" className="tb-btn-buy h-11 text-white flex-1 rounded-none text-base hover:brightness-95" onClick={() => add(true)} disabled={busy || !inStock || !p.active}>
               立即購買
             </Button>
           </div>

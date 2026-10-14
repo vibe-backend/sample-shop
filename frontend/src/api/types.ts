@@ -105,7 +105,7 @@ export interface ProductQuery {
   limit?: number;
 }
 
-/** CONTRACT.md §3 @aec9631: `sold_count` is server-maintained and never part of the input. */
+/** CONTRACT.md §3 @42a33ae: `sold_count` is server-maintained and never part of the input. */
 export type ProductInput = Omit<Product, 'id' | 'in_stock' | 'created_at' | 'sold_count'>;
 
 export interface ProductSummary {
@@ -154,7 +154,7 @@ export interface OrderItem {
 }
 
 /**
- * Saved delivery address — CONTRACT.md §12 @aec9631 (backend/markdown-v1), reusable by #44.
+ * Saved delivery address — CONTRACT.md §12 @42a33ae (backend/markdown-v1), reusable by #44.
  * GET/POST /shop/v1/addresses (§2 #17/#18; JWT, own addresses only).
  */
 export interface Address {
@@ -184,7 +184,7 @@ export type AddressSnapshot = Pick<Address, 'recipient' | 'phone' | 'region' | '
 export interface Order {
   id: string;
   status: OrderStatus;
-  /** §12 @aec9631: snapshot written at order time; null/absent only for legacy orders placed before addresses existed. */
+  /** §12 @42a33ae: snapshot written at order time; null/absent only for legacy orders placed before addresses existed. */
   shipping_address?: AddressSnapshot | null;
   items: OrderItem[];
   total_cents: number;
@@ -192,7 +192,7 @@ export interface Order {
   created_at: string;
 }
 
-/** POST /shop/v1/orders body — §2 #14 / §12 @aec9631: `address_id` required (422 ADDRESS_REQUIRED, 404 ADDRESS_NOT_FOUND). */
+/** POST /shop/v1/orders body — §2 #14 / §12 @42a33ae: `address_id` required (422 ADDRESS_REQUIRED, 404 ADDRESS_NOT_FOUND). */
 export interface CreateOrderInput {
   address_id: string;
   [k: string]: unknown;
@@ -217,9 +217,9 @@ export interface ShopApi {
   createOrder(idempotencyKey: string, body: CreateOrderInput): Promise<Order>;
   listOrders(cursor?: string): Promise<Page<Order>>;
   getOrder(id: string): Promise<Order>;
-  /** §2 #17 / §12 @aec9631: GET /shop/v1/addresses → Address[] (not paged), default first, then newest first. */
+  /** §2 #17 / §12 @42a33ae: GET /shop/v1/addresses → Address[] (not paged), default first, then newest first. */
   listAddresses(): Promise<Address[]>;
-  /** §2 #18 / §12 @aec9631: POST /shop/v1/addresses → 201; 422 VALIDATION_FAILED, 422 ADDRESS_LIMIT. */
+  /** §2 #18 / §12 @42a33ae: POST /shop/v1/addresses → 201; 422 VALIDATION_FAILED, 422 ADDRESS_LIMIT. */
   createAddress(a: AddressInput): Promise<Address>;
   createProduct(p: ProductInput): Promise<Product>;
   updateProduct(id: string, p: Partial<ProductInput>): Promise<Product>;

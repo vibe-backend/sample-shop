@@ -96,7 +96,7 @@ export function createRealApi(baseUrl: string, slug: string): ShopApi {
     },
     listOrders: (cursor) => req<Page<Order>>('GET', '/shop/v1/orders' + qs({ cursor })),
     getOrder: (id) => req<Order>('GET', `/shop/v1/orders/${encodeURIComponent(id)}`),
-    // §2 #17/#18, §12 @aec9631
+    // §2 #17/#18, §12 @42a33ae
     listAddresses: () => req<Address[]>('GET', '/shop/v1/addresses'),
     createAddress: (a) => req<Address>('POST', '/shop/v1/addresses', a),
     createProduct: (p: ProductInput) => req<Product>('POST', cat, p),

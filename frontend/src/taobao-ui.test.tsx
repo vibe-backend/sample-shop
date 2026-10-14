@@ -6,7 +6,7 @@ import App from './App';
 import { api, tokenStore } from './api';
 import { AuthProvider } from './auth';
 import { ThemeProvider } from './theme';
-import { ProductCard } from './pages/Products';
+import { Carousel, ProductCard } from './pages/Products';
 import { seedProducts } from './api/seed';
 
 globalThis.ResizeObserver ??= class {
@@ -61,4 +61,21 @@ describe('Taobao-style layout', () => {
     fireEvent.click(buy);
     await waitFor(() => expect(screen.getByRole('heading', { name: '結帳' })).toBeTruthy(), { timeout: 5000 });
   }, 15000);
+});
+
+describe('carousel a11y (WCAG 2.2.2)', () => {
+  it('has a pause/play control and switches aria-live when paused', () => {
+    render(<MemoryRouter><Carousel /></MemoryRouter>);
+    const slide = screen.getByRole('region', { name: '推介' }).querySelector('[aria-roledescription="slide"]')!;
+    expect(slide.getAttribute('aria-live')).toBe('off');
+    fireEvent.click(screen.getByRole('button', { name: '暫停輪播' }));
+    expect(screen.getByRole('button', { name: '播放輪播' })).toBeTruthy();
+    expect(slide.getAttribute('aria-live')).toBe('polite');
+  });
+  it('pauses while hovered', () => {
+    render(<MemoryRouter><Carousel /></MemoryRouter>);
+    const region = screen.getByRole('region', { name: '推介' });
+    fireEvent.mouseEnter(region);
+    expect(region.querySelector('[aria-roledescription="slide"]')!.getAttribute('aria-live')).toBe('polite');
+  });
 });

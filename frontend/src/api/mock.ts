@@ -78,6 +78,18 @@ export function freshState(): MockState {
   return { users: DEMO_USERS.map((u) => ({ ...u })), products: seedProducts(), carts: {}, orders: {}, addresses: seedAddresses(), idempotency: {}, sessions: {}, seq: 1000 };
 }
 
+/** Deep, key-order-independent JSON for idempotency body comparison (CONTRACT.md §10 normalised hash). */
+export function stableStringify(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(stableStringify).join(',')}]`;
+  if (v && typeof v === 'object')
+    return `{${Object.keys(v as object)
+      .filter((k) => (v as Record<string, unknown>)[k] !== undefined)
+      .sort()
+      .map((k) => `${JSON.stringify(k)}:${stableStringify((v as Record<string, unknown>)[k])}`)
+      .join(',')}}`;
+  return JSON.stringify(v ?? null);
+}
+
 const err = (status: number, code: string, message: string) => new ApiRequestError(status, code, message);
 
 export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockState; reset(): void } {
@@ -99,14 +111,20 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
       }
       const legacy = globalThis.localStorage?.getItem(LEGACY_KEY);
       if (legacy) {
-        globalThis.localStorage?.removeItem(LEGACY_KEY);
+        let migrated: MockState | null = null;
         try {
-          const migrated = migrateV1(JSON.parse(legacy) as MockState);
-          globalThis.localStorage?.setItem(STORAGE_KEY, JSON.stringify(migrated));
-          return migrated;
+          migrated = migrateV1(JSON.parse(legacy) as MockState);
         } catch {
-          /* corrupt v1 data: start fresh */
+          /* corrupt v1 data: start fresh (and drop it below) */
         }
+        try {
+          // Only drop v1 once v2 is safely written (or v1 is unreadable anyway).
+          if (migrated) globalThis.localStorage?.setItem(STORAGE_KEY, JSON.stringify(migrated));
+          globalThis.localStorage?.removeItem(LEGACY_KEY);
+        } catch {
+          /* quota/full storage: keep v1 so nothing is lost; retry next load */
+        }
+        if (migrated) return migrated;
       }
     }
     return freshState();
@@ -115,7 +133,7 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
     if (opts.persist) globalThis.localStorage?.setItem(STORAGE_KEY, JSON.stringify({ ...state, sessions: {} }));
   }
   const addressesOf = (uid: string) => ((state.addresses ??= {})[uid] ??= []);
-  // §12 @aec9631: default first, then newest first.
+  // §12 @42a33ae: default first, then newest first.
   const sortAddresses = (xs: Address[]) => [...xs].sort((a, b) => Number(b.is_default) - Number(a.is_default) || b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id));
   const id = (prefix: string) => `${prefix}_${(++state.seq).toString(36)}`;
 
@@ -314,7 +332,7 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
         // the original order; different body → 409; failed attempts don't retain the key.
         if (!key) throw err(400, 'IDEMPOTENCY_KEY_REQUIRED', '缺少 Idempotency-Key');
         const ik = `${u.id}:${key}`;
-        const bodyHash = JSON.stringify(body ?? {}, Object.keys(body ?? {}).sort());
+        const bodyHash = stableStringify(body ?? {});
         const prev = state.idempotency[ik];
         if (prev) {
           if ((state.idempotency_body?.[ik] ?? '{}') !== bodyHash) throw err(409, 'IDEMPOTENCY_KEY_REUSED', '此 Idempotency-Key 已用於另一個請求');
@@ -322,7 +340,7 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
         }
         const cart = cartOf(u.id);
         if (!cart.items.length) throw err(422, 'CART_EMPTY', '購物車是空的');
-        // §12 @aec9631: address_id required and snapshotted onto the order.
+        // §12 @42a33ae: address_id required and snapshotted onto the order.
         if (!body?.address_id) throw err(422, 'ADDRESS_REQUIRED', '請選擇收貨地址');
         const addr = addressesOf(u.id).find((a) => a.id === body.address_id);
         if (!addr) throw err(404, 'ADDRESS_NOT_FOUND', '找不到收貨地址');
@@ -334,7 +352,7 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
         for (const it of cart.items) {
           const p = findProduct(it.product.id, true);
           const v = skuOf(p, it.sku?.id);
-          p.sold_count = (p.sold_count ?? 0) + it.quantity; // §12 @aec9631
+          p.sold_count = (p.sold_count ?? 0) + it.quantity; // §12 @42a33ae
           if (v) {
             v.stock -= it.quantity;
             v.in_stock = v.stock > 0;
