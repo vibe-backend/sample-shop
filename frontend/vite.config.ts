@@ -1,5 +1,7 @@
 import { defineConfig, loadEnv } from 'vite';
+import path from 'node:path';
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 import { checkApiMode } from './build-env';
 
 // Production builds are served from GitHub Pages at /sample-shop/ (override with VITE_BASE).
@@ -10,6 +12,7 @@ export default defineConfig(({ command, mode }) => {
   if (problem) throw new Error(problem);
   return {
     base: command === 'build' ? env.VITE_BASE || '/sample-shop/' : '/',
-    plugins: [react()],
+    plugins: [react(), tailwindcss()],
+    resolve: { alias: { '@': path.resolve(__dirname, './src') } },
   };
 });
