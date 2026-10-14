@@ -1,13 +1,15 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Minus, Plus } from 'lucide-react';
-import { api, formatPrice, type Cart } from '../api';
+import { ApiRequestError, api, formatPrice, type Cart } from '../api';
 import { useAuth } from '../auth';
 import { Empty, ErrorNote, PageTitle, Spinner, useAsync } from '../components/ui-helpers';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
+import { skuLabel } from '@/lib/sku';
+import { cn } from '@/lib/utils';
 
 function Summary({ label, cents, currency, children }: { label: string; cents: number; currency?: string; children: ReactNode }) {
   return (
@@ -77,6 +79,7 @@ export function CartPage() {
                       <Link to={`/products/${it.product.id}`} className="font-semibold hover:underline">
                         {it.product.name}
                       </Link>
+                      {it.sku && <span className="text-sm text-muted-foreground">{skuLabel(it.sku.options)}</span>}
                       <span className="text-sm text-muted-foreground">單價 {formatPrice(it.product.price_cents, it.product.currency)}</span>
                       {!it.product.in_stock && <Badge className="bg-warning/15 text-warning">已售完</Badge>}
                     </div>
@@ -113,10 +116,11 @@ export function CartPage() {
 export function CheckoutPage() {
   const { me, setCartCount } = useAuth();
   const nav = useNavigate();
-  const [cart, error, loading] = useAsync(() => api.getCart(), []);
-  // One key per checkout visit, so a double-click or retry cannot create two orders.
-  const idemKey = useMemo(() => crypto.randomUUID(), []);
+  const [loadedCart, error, loading] = useAsync(() => api.getCart(), []);
+  const [fresh, setFresh] = useState<Cart | null>(null);
+  const cart = fresh ?? loadedCart;
   const [busy, setBusy] = useState(false);
+  const [unavailable, setUnavailable] = useState<Set<string>>(new Set());
   const [placeErr, setPlaceErr] = useState<unknown>(null);
 
   if (loading) return <Spinner />;
@@ -136,6 +140,9 @@ export function CheckoutPage() {
   async function place() {
     setBusy(true);
     setPlaceErr(null);
+    // CONTRACT.md §10 @47bc45e: a new key per press of 確認下單; the real adapter's automatic
+    // TX_CONFLICT / network retries reuse it. `busy` blocks double-clicks.
+    const idemKey = crypto.randomUUID();
     try {
       const o = await api.createOrder(idemKey);
       setCartCount(0);
@@ -143,6 +150,16 @@ export function CheckoutPage() {
     } catch (e) {
       setPlaceErr(e);
       setBusy(false);
+      // §11: no details from the SDK yet, so refetch and flag lines that can no longer be bought.
+      if (e instanceof ApiRequestError && e.code === 'PRODUCT_UNAVAILABLE') {
+        try {
+          const next = await api.getCart();
+          setFresh(next);
+          setUnavailable(new Set(next.items.filter((it) => !it.product.in_stock).map((it) => it.id)));
+        } catch {
+          /* keep the original error */
+        }
+      }
     }
   }
 
@@ -165,9 +182,11 @@ export function CheckoutPage() {
           <CardContent className="space-y-2">
             <ul className="space-y-2">
               {cart.items.map((it) => (
-                <li key={it.id} className="flex justify-between gap-3">
+                <li key={it.id} data-unavailable={unavailable.has(it.id) || undefined} className={cn('flex justify-between gap-3', unavailable.has(it.id) && 'rounded-md bg-destructive/10 px-2 py-1 text-destructive')}>
                   <span>
-                    {it.product.name} × {it.quantity}
+                    {unavailable.has(it.id) && <Badge variant="destructive" className="mr-1.5">已無法購買</Badge>}
+                    {it.product.name}
+                    {it.sku && <span className="text-muted-foreground">（{skuLabel(it.sku.options)}）</span>} × {it.quantity}
                   </span>
                   <span className="tabular-nums">{formatPrice(it.line_total_cents, currency)}</span>
                 </li>
@@ -178,6 +197,11 @@ export function CheckoutPage() {
         </Card>
         <Summary label="總計" cents={cart.subtotal_cents} currency={currency}>
           <ErrorNote error={placeErr} />
+          {unavailable.size > 0 && (
+            <Button variant="outline" asChild>
+              <Link to="/cart">前往購物車移除無法購買的商品</Link>
+            </Button>
+          )}
           <Button size="lg" className="h-10" onClick={place} disabled={busy}>
             {busy ? '處理中…' : '確認下單'}
           </Button>

@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 
 export type Theme = 'light' | 'dark' | 'auto';
 const KEY = 'shop.theme';
@@ -36,15 +36,25 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const resolved = theme === 'auto' ? (sysDark ? 'dark' : 'light') : theme;
+  const first = useRef(true);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', resolved === 'dark');
+  }, [resolved]);
+
+  useEffect(() => {
+    // Only persist explicit user choices; never write the default on first render.
+    if (first.current) {
+      first.current = false;
+      return;
+    }
     try {
-      globalThis.localStorage?.setItem(KEY, theme);
+      if (theme === 'auto') globalThis.localStorage?.removeItem(KEY);
+      else globalThis.localStorage?.setItem(KEY, theme);
     } catch {
       /* ignore */
     }
-  }, [theme, resolved]);
+  }, [theme]);
 
   return <Ctx.Provider value={{ theme, resolved, setTheme }}>{children}</Ctx.Provider>;
 }

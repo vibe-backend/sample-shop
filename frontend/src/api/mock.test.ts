@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { createMockApi } from './mock';
+import { createMockApi, migrateV1 } from './mock';
+import { seedProducts, syncVariantTotals } from './seed';
 import { formatPrice, lineTotal, subtotal } from './money';
 import { ApiRequestError } from './types';
 
@@ -80,19 +81,19 @@ describe('cart and orders', () => {
   beforeEach(() => loginAs('demo@example.com', 'demo1234'));
 
   it('increments quantity when the same product is added again', async () => {
-    await api.addCartItem('p_001', 2);
-    const cart = await api.addCartItem('p_001', 1);
+    await api.addCartItem('p_007', 2);
+    const cart = await api.addCartItem('p_007', 1);
     expect(cart.items).toHaveLength(1);
     expect(cart.items[0].quantity).toBe(3);
-    expect(cart.items[0].line_total_cents).toBe(3 * 18800);
+    expect(cart.items[0].line_total_cents).toBe(3 * 42000);
   });
 
   it('keeps subtotal equal to the sum of line totals', async () => {
-    await api.addCartItem('p_001', 2);
+    await api.addCartItem('p_007', 2);
     const cart = await api.addCartItem('p_004', 3);
-    expect(cart.subtotal_cents).toBe(2 * 18800 + 3 * 9800);
+    expect(cart.subtotal_cents).toBe(2 * 42000 + 3 * 9800);
     const updated = await api.updateCartItem(cart.items[1].id, 1);
-    expect(updated.subtotal_cents).toBe(2 * 18800 + 9800);
+    expect(updated.subtotal_cents).toBe(2 * 42000 + 9800);
   });
 
   it('rejects out-of-stock with 409 OUT_OF_STOCK', async () => {
@@ -116,4 +117,118 @@ describe('cart and orders', () => {
   it('forbids product management for non-staff', async () => {
     await expectCode(api.deleteProduct('p_001'), 403, 'FORBIDDEN');
   });
+
+  it('requires a SKU for products with variants (422 SKU_REQUIRED)', async () => {
+    await expectCode(api.addCartItem('p_003', 1), 422, 'SKU_REQUIRED');
+    await expectCode(api.addCartItem('p_003', 1, 'nope'), 404, 'SKU_NOT_FOUND');
+  });
+
+  it('lists different SKUs of one product as separate cart lines with SKU price', async () => {
+    await api.addCartItem('p_003', 1, 'p_003_sku1');
+    await api.addCartItem('p_003', 1, 'p_003_sku2');
+    const cart = await api.addCartItem('p_003', 1, 'p_003_sku1');
+    expect(cart.items).toHaveLength(2);
+    expect(cart.items[0]).toMatchObject({ quantity: 2, sku: { id: 'p_003_sku1', options: { 顏色: '米白', 尺寸: '標準' } }, line_total_cents: 64000 });
+    expect(cart.items[1]).toMatchObject({ quantity: 1, sku: { options: { 尺寸: '大' } }, line_total_cents: 36000 });
+  });
+
+  it('checks stock per SKU', async () => {
+    await expectCode(api.addCartItem('p_003', 1, 'p_003_sku4'), 409, 'OUT_OF_STOCK');
+    await expectCode(api.addCartItem('p_003', 7, 'p_003_sku1'), 409, 'OUT_OF_STOCK');
+  });
+
+  it('snapshots SKU options on orders and decrements SKU stock', async () => {
+    await api.addCartItem('p_003', 2, 'p_003_sku2');
+    const o = await api.createOrder('k-sku');
+    expect(o.items[0]).toMatchObject({ sku_id: 'p_003_sku2', sku_options: { 顏色: '米白', 尺寸: '大' }, unit_price_cents: 36000 });
+    const p = await api.getProduct('p_003');
+    expect(p.variants!.find((v) => v.id === 'p_003_sku2')!.stock).toBe(2);
+    expect(p.stock).toBe(13);
+  });
+
+  it('requires an Idempotency-Key (CONTRACT.md §10 @47bc45e)', async () => {
+    await api.addCartItem('p_007', 1);
+    await expectCode(api.createOrder(undefined as unknown as string), 400, 'IDEMPOTENCY_KEY_REQUIRED');
+    expect((await api.getCart()).items).toHaveLength(1); // failed attempt changes nothing
+  });
+
+  it('rejects reusing a key with a different body (409 IDEMPOTENCY_KEY_REUSED)', async () => {
+    await api.addCartItem('p_007', 1);
+    const o = await api.createOrder('k1', {});
+    expect((await api.createOrder('k1', {})).id).toBe(o.id);
+    await expectCode(api.createOrder('k1', { note: 'x' }), 409, 'IDEMPOTENCY_KEY_REUSED');
+  });
+
+  it('rejects ordering when a cart line became unavailable and flags it in the cart', async () => {
+    await api.addCartItem('p_003', 1, 'p_003_sku1');
+    await api.addCartItem('p_007', 1);
+    api.state.products.find((x) => x.id === 'p_003')!.variants = [];
+    await expectCode(api.createOrder('k-u'), 409, 'PRODUCT_UNAVAILABLE');
+    const cart = await api.getCart();
+    expect(cart.items.map((i) => i.product.in_stock)).toEqual([false, true]);
+  });
+
+  it('restricts the staff product list to staff', async () => {
+    await expectCode(api.listStaffProducts(), 403, 'FORBIDDEN');
+  });
 });
+
+describe('staff edits', () => {
+  beforeEach(() => loginAs('staff@example.com', 'staff1234'));
+  it('keeps explicit price/stock edits on products without variants', async () => {
+    const p = await api.updateProduct('p_007', { price_cents: 50000, stock: 7 });
+    expect(p).toMatchObject({ price_cents: 50000, stock: 7, in_stock: true });
+  });
+  it('rejects changing derived price/stock on SKU products instead of silently overwriting', async () => {
+    await expectCode(api.updateProduct('p_003', { price_cents: 1 }), 422, 'VARIANT_MANAGED');
+    await expectCode(api.updateProduct('p_003', { stock: 99 }), 422, 'VARIANT_MANAGED');
+    const p = await api.updateProduct('p_003', { name: '新名', price_cents: 32000, stock: 15 });
+    expect(p).toMatchObject({ name: '新名', price_cents: 32000, stock: 15 });
+  });
+});
+
+describe('storage migration v1 → v2', () => {
+  it('keeps orders and edits, attaches SKUs and drops cart lines that now need a spec', () => {
+    const v1Products = seedProducts().map(({ options: _o, variants: _v, ...p }) => (void _o, void _v, { ...p }));
+    v1Products[6].name = '已改名';
+    const v1 = { ...createMockApi().state, products: v1Products, carts: { u_demo: [{ id: 'ci_1', product_id: 'p_003', quantity: 1 }, { id: 'ci_2', product_id: 'p_007', quantity: 2 }] }, orders: { u_demo: [{ id: 'ord_x' }] } };
+    const m = migrateV1(v1 as never);
+    expect(m.products[6].name).toBe('已改名');
+    expect(m.products[2].variants).toHaveLength(6);
+    expect(m.carts.u_demo.map((l) => l.id)).toEqual(['ci_2']);
+    expect(m.orders.u_demo).toHaveLength(1);
+  });
+  it('migrates persisted v1 data on load and removes the old key', () => {
+    const store = new Map<string, string>();
+    const ls = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v), removeItem: (k: string) => void store.delete(k) };
+    const prev = (globalThis as { localStorage?: unknown }).localStorage;
+    (globalThis as { localStorage?: unknown }).localStorage = ls;
+    try {
+      store.set('shop.mock.v1', JSON.stringify({ ...createMockApi().state, orders: { u_demo: [{ id: 'ord_old' }] } }));
+      const a = createMockApi({ persist: true });
+      expect(a.state.orders.u_demo[0].id).toBe('ord_old');
+      expect(store.has('shop.mock.v1')).toBe(false);
+      expect(store.has('shop.mock.v2')).toBe(true);
+    } finally {
+      (globalThis as { localStorage?: unknown }).localStorage = prev;
+    }
+  });
+});
+
+describe('SKU contract rules (CONTRACT.md @dd5bf0b §9)', () => {
+  it('treats a product with options but no active variants as not purchasable', async () => {
+    const p = api.state.products.find((x) => x.id === 'p_001')!;
+    p.variants = [];
+    syncVariantTotals(p);
+    expect((await api.getProduct('p_001')).in_stock).toBe(false);
+    await loginAs('demo@example.com', 'demo1234');
+    await expectCode(api.addCartItem('p_001', 1), 409, 'PRODUCT_UNAVAILABLE');
+  });
+  it('counts zero-stock variants toward the minimum price', () => {
+    const tote = seedProducts().find((x) => x.slug === 'linen-tote')!;
+    tote.variants![0].stock = 0;
+    tote.variants![0].in_stock = false;
+    expect(syncVariantTotals(tote).price_cents).toBe(32000);
+  });
+});
+

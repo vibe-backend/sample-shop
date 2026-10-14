@@ -32,6 +32,7 @@ export function StaffProductsPage() {
   const [error, setError] = useState<unknown>(null);
   const [tick, setTick] = useState(0);
   const [pending, setPending] = useState<Product | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -42,7 +43,7 @@ export function StaffProductsPage() {
         const all: Product[] = [];
         let cursor: string | undefined;
         do {
-          const p = await api.listProducts({ cursor, limit: 50, sort: 'created_at_desc' });
+          const p = await api.listStaffProducts({ cursor, limit: 50, sort: 'created_at_desc' });
           all.push(...p.items);
           cursor = p.next_cursor ?? undefined;
         } while (cursor);
@@ -59,12 +60,15 @@ export function StaffProductsPage() {
   }, [tick]);
 
   async function remove(p: Product) {
+    setDeleting(p.id);
     try {
       await api.deleteProduct(p.id);
       toast.success(`已刪除「${p.name}」`);
       setTick((t) => t + 1);
     } catch (e) {
-      setError(e);
+      toast.error(`刪除「${p.name}」失敗：${e instanceof Error ? e.message : '未知錯誤'}`);
+    } finally {
+      setDeleting(null);
     }
   }
 
@@ -116,8 +120,8 @@ export function StaffProductsPage() {
                     <Button variant="link" size="sm" asChild>
                       <Link to={`/staff/products/${p.id}`}>編輯</Link>
                     </Button>
-                    <Button variant="link" size="sm" className="text-destructive" onClick={() => setPending(p)}>
-                      刪除
+                    <Button variant="link" size="sm" className="text-destructive" disabled={deleting === p.id} onClick={() => setPending(p)}>
+                      {deleting === p.id ? '刪除中…' : '刪除'}
                     </Button>
                   </TableCell>
                 </TableRow>
@@ -161,6 +165,7 @@ export function StaffEditPage() {
   const [loading, setLoading] = useState(!!id);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  const [skuCount, setSkuCount] = useState(0);
 
   useEffect(() => {
     if (!id) return;
@@ -169,6 +174,7 @@ export function StaffEditPage() {
       .then((p) => {
         setF({ slug: p.slug, name: p.name, description: p.description, price_cents: p.price_cents, currency: p.currency, image_urls: p.image_urls, category: p.category, stock: p.stock, active: p.active });
         setPrice((p.price_cents / 100).toString());
+        setSkuCount(p.variants?.length ?? 0);
         setImageText(p.image_urls.filter((u) => !u.startsWith('data:')).join('\n'));
       })
       .catch(setError)
@@ -181,10 +187,15 @@ export function StaffEditPage() {
     setError(null);
     const typed = imageText.split('\n').map((u) => u.trim()).filter(Boolean);
     const image_urls = typed.length ? typed : f.image_urls.filter((u) => u.startsWith('data:'));
-    const body = { ...f, image_urls, price_cents: Math.round(Number(price) * 100) };
+    const full = { ...f, image_urls, price_cents: Math.round(Number(price) * 100) };
+    // SKU products: price/stock come from the variants, so never send them.
+    const { price_cents: _p, stock: _s, ...rest } = full;
+    void _p;
+    void _s;
+    const body = skuCount ? rest : full;
     try {
       if (id) await api.updateProduct(id, body);
-      else await api.createProduct(body);
+      else await api.createProduct(full);
       nav('/staff/products');
     } catch (err) {
       setError(err);
@@ -207,11 +218,12 @@ export function StaffEditPage() {
             <Field id="slug" label="Slug">
               <Input id="slug" required pattern="[a-z0-9-]+" title="小寫英文、數字及連字號" className="h-10" value={f.slug} onChange={(e) => setF({ ...f, slug: e.target.value })} />
             </Field>
-            <Field id="price" label="價格（HK$）">
-              <Input id="price" type="number" min="0" step="0.01" required className="h-10" value={price} onChange={(e) => setPrice(e.target.value)} />
+            {skuCount > 0 && <p className="text-sm text-muted-foreground sm:col-span-2">此商品設有 {skuCount} 個規格，價格及庫存由規格計算（最低規格價、規格庫存總和），不可在此修改。</p>}
+            <Field id="price" label={skuCount > 0 ? '價格（HK$，由規格計算）' : '價格（HK$）'}>
+              <Input id="price" type="number" min="0" step="0.01" required readOnly={skuCount > 0} aria-readonly={skuCount > 0} className="h-10 read-only:bg-muted" value={price} onChange={(e) => setPrice(e.target.value)} />
             </Field>
-            <Field id="stock" label="庫存">
-              <Input id="stock" type="number" min="0" step="1" required className="h-10" value={f.stock} onChange={(e) => setF({ ...f, stock: Number(e.target.value) })} />
+            <Field id="stock" label={skuCount > 0 ? '庫存（由規格計算）' : '庫存'}>
+              <Input id="stock" type="number" min="0" step="1" required readOnly={skuCount > 0} aria-readonly={skuCount > 0} className="h-10 read-only:bg-muted" value={f.stock} onChange={(e) => setF({ ...f, stock: Number(e.target.value) })} />
             </Field>
             <Field id="category" label="分類">
               <Select value={f.category} onValueChange={(v) => setF({ ...f, category: v })}>

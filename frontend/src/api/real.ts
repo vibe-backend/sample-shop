@@ -12,6 +12,13 @@ import {
 } from './types';
 import { tokenStore } from './token';
 
+export const ORDER_RETRIES = 2;
+let sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+/** Test hook: replace the retry delay. */
+export function setRetrySleep(fn: (ms: number) => Promise<void>) {
+  sleep = fn;
+}
+
 /** Fetch adapter implemented against the contract. Not exercised yet (no backend). */
 export function createRealApi(baseUrl: string, slug: string): ShopApi {
   const base = baseUrl.replace(/\/$/, '');
@@ -30,9 +37,12 @@ export function createRealApi(baseUrl: string, slug: string): ShopApi {
     if (res.status === 204) return undefined as T;
     const data = await res.json().catch(() => null);
     if (!res.ok) {
-      const code = (data && typeof data.code === 'string' && data.code) || `HTTP_${res.status}`;
-      const message = (data && typeof data.message === 'string' && data.message) || res.statusText;
-      throw new ApiRequestError(res.status, code, message);
+      // CONTRACT.md §11 @47bc45e wraps errors as { error: { code, message } }; accept a flat body too.
+      const e = data && typeof data.error === 'object' && data.error ? data.error : data;
+      const code = (e && typeof e.code === 'string' && e.code) || `HTTP_${res.status}`;
+      const message = (e && typeof e.message === 'string' && e.message) || res.statusText;
+      const ra = Number(res.headers.get('Retry-After'));
+      throw new ApiRequestError(res.status, code, message, Number.isFinite(ra) && ra > 0 ? ra : undefined);
     }
     return data as T;
   }
@@ -53,23 +63,40 @@ export function createRealApi(baseUrl: string, slug: string): ShopApi {
   const cat = `/catalog/v1/${encodeURIComponent(slug)}/products`;
 
   return {
-    login: (c) => req<AuthToken>('POST', '/users/v1/login', c),
-    register: (r) => req<AuthToken>('POST', '/users/v1/register', r),
+    login: (c) => req<AuthToken>('POST', `/users/v1/${encodeURIComponent(slug)}/login`, c),
+    register: (r) => req<AuthToken>('POST', `/users/v1/${encodeURIComponent(slug)}/register`, r),
     me: () => req<Me>('GET', '/users/v1/me'),
     listProducts: (q = {}) => {
       const { sort, ...rest } = q;
       return req<Page<Product>>('GET', cat + qs({ ...rest, ...sortParam(sort) }));
     },
+    listStaffProducts: (q = {}) => {
+      const { sort, ...rest } = q;
+      return req<Page<Product>>('GET', `/catalog/v1/${encodeURIComponent(slug)}/staff/products` + qs({ ...rest, ...sortParam(sort) }));
+    },
     getProduct: (id) => req<Product>('GET', `${cat}/${encodeURIComponent(id)}`),
     getCart: () => req<Cart>('GET', '/shop/v1/cart-items'),
-    addCartItem: (product_id, quantity) => req<Cart>('POST', '/shop/v1/cart-items', { product_id, quantity }),
-    updateCartItem: (id, quantity) => req<Cart>('PATCH', `/shop/v1/cart-items/${encodeURIComponent(id)}`, { quantity }),
+    addCartItem: (product_id, quantity, sku_id) =>
+      req<Cart>('POST', '/shop/v1/cart-items', sku_id ? { product_id, sku_id, quantity } : { product_id, quantity }),
+    updateCartItem: (id, quantity) => req<Cart>('PUT', `/shop/v1/cart-items/${encodeURIComponent(id)}`, { quantity }),
     removeCartItem: (id) => req<Cart>('DELETE', `/shop/v1/cart-items/${encodeURIComponent(id)}`),
-    createOrder: (key) => req<Order>('POST', '/shop/v1/orders', {}, { 'Idempotency-Key': key }),
+    // CONTRACT.md §10 @47bc45e (backend/markdown-v1): Idempotency-Key is required; on 503 TX_CONFLICT or a
+    // network error, wait Retry-After (default 1s) and retry with the SAME key, at most twice.
+    createOrder: async (key, body = {}) => {
+      for (let attempt = 0; ; attempt++) {
+        try {
+          return await req<Order>('POST', '/shop/v1/orders', body, { 'Idempotency-Key': key });
+        } catch (e) {
+          const retryable = e instanceof ApiRequestError && (e.code === 'TX_CONFLICT' || e.code === 'NETWORK_ERROR');
+          if (!retryable || attempt >= ORDER_RETRIES) throw e;
+          await sleep((e.retryAfter ?? 1) * 1000);
+        }
+      }
+    },
     listOrders: (cursor) => req<Page<Order>>('GET', '/shop/v1/orders' + qs({ cursor })),
     getOrder: (id) => req<Order>('GET', `/shop/v1/orders/${encodeURIComponent(id)}`),
     createProduct: (p: ProductInput) => req<Product>('POST', cat, p),
-    updateProduct: (id, p) => req<Product>('PATCH', `${cat}/${encodeURIComponent(id)}`, p),
+    updateProduct: (id, p) => req<Product>('PUT', `${cat}/${encodeURIComponent(id)}`, p),
     deleteProduct: (id) => req<void>('DELETE', `${cat}/${encodeURIComponent(id)}`),
   };
 }
