@@ -40,7 +40,7 @@
 | 15 | `GET /shop/v1/orders` | JWT（本人） | query `cursor`, `limit` | 200 `Page<Order>`（新到舊，含 items） | 401 |
 | 16 | `GET /shop/v1/orders/{id}` | JWT（本人） | path `id` | 200 `Order` | 404（不存在或非本人） |
 | 17 | `GET /shop/v1/addresses` | JWT（本人） | — | 200 `Address[]`（預設排最前，不分頁） | 401 |
-| 18 | `POST /shop/v1/addresses` | JWT（本人） | body `AddressInput` | 201 `Address` + `Location` | 422 `VALIDATION_ERROR`、422 `ADDRESS_LIMIT` |
+| 18 | `POST /shop/v1/addresses` | JWT（本人） | body `AddressInput` | 201 `Address` + `Location` | 422 `VALIDATION_FAILED`、422 `ADDRESS_LIMIT` |
 | — | `PUT`／`DELETE /shop/v1/addresses/{id}`、`POST /shop/v1/addresses/{id}/default` | JWT（本人） | — | 規劃中（#44），v1 未實作 | — |
 
 ## 3. 資料型別
@@ -139,7 +139,7 @@ type Order = { id: string; status: OrderStatus; shipping_address?: AddressSnapsh
 | 422 | `VALIDATION_FAILED` | 全部 | 欄位驗證失敗或未宣告欄位 |
 | 422 | `SKU_REQUIRED` | 加入購物車 | 商品有規格但未提供 `sku_id` |
 | 422 | `QUANTITY_LIMIT` | 加入購物車 | 累加後超過 99 |
-| 422 | `VALIDATION_ERROR` | 新增地址 | 地址欄位驗證失敗（§12；與其他端點的 `VALIDATION_FAILED` 不一致，見 §12） |
+| 422 | `VALIDATION_FAILED` | 新增地址 | 地址欄位驗證失敗（§12；與其他端點的 `VALIDATION_FAILED` 不一致，見 §12） |
 | 422 | `ADDRESS_LIMIT` | 新增地址 | 已有 20 個地址 |
 | 422 | `ADDRESS_REQUIRED` | 下單 | body 缺少 `address_id` |
 | 422 | `CART_EMPTY` | 下單 | 購物車為空 |
@@ -229,7 +229,7 @@ type Order = { id: string; status: OrderStatus; shipping_address?: AddressSnapsh
 ## 12. 收貨地址（前端 #29，sample-shop PR #64）
 
 - model `address`：每位使用者各自擁有（owner-key `user_id`），欄位 `id`、`recipient`、`phone`、`region`、`line1`、`is_default`、`created_at`；每人最多 20 個。
-- 驗證（與 PR #64 `lib/address.ts` 相同）：`recipient` 1–50 字；`phone` 移除空白、連字號與開頭 `+852`／`852` 後須為 `[2-9]` 開頭的 8 位數字，並以正規化後的值儲存；`region` 為 香港島／九龍／新界／離島；`line1` 5–200 字。不通過回 422 `VALIDATION_ERROR`。
+- 驗證（與 PR #64 `lib/address.ts` 相同）：`recipient` 1–50 字；`phone` 移除空白、連字號與開頭 `+852`／`852` 後須為 `[2-9]` 開頭的 8 位數字，並以正規化後的值儲存；`region` 為 香港島／九龍／新界／離島；`line1` 5–200 字。不通過回 422 `VALIDATION_FAILED`。
 - `GET /shop/v1/addresses`：回傳 `Address[]`（非 `Page`），預設地址排最前，其餘依 `created_at` 由新到舊。
 - `POST /shop/v1/addresses`：201。使用者的第一個地址自動成為預設；`is_default: true` 時在同一交易中先清除舊的預設。達 20 個回 422 `ADDRESS_LIMIT`。
 - 下單：body `address_id` 必填（缺少 422 `ADDRESS_REQUIRED`；不存在或屬於他人 404 `ADDRESS_NOT_FOUND`）。`order.place` 在同一交易中把 `recipient`／`phone`／`region`／`line1` 快照寫入 `orders.shipping_address`，之後修改地址簿不影響訂單。`address_id` 計入冪等 body 雜湊（§10）。
@@ -239,5 +239,5 @@ type Order = { id: string; status: OrderStatus; shipping_address?: AddressSnapsh
   - 需求原寫 `address_line`，此處依 `types.ts` 採用 `line1`。
   - `CreateOrderInput.address_id` 在 `types.ts` 為選填（`address_id?`），後端視為必填（缺少回 422）。
   - `Order.shipping_address` 在 `types.ts` 可為 null／缺少；後端新訂單一律有值，只有加入地址前的舊訂單為 null。
-  - 地址驗證錯誤碼 `VALIDATION_ERROR` 與前端 mock 一致，但本合約其他端點使用 `VALIDATION_FAILED`（SDK 預設）**〔待統一〕**。
+  - 地址驗證錯誤碼 `VALIDATION_FAILED` 與前端 mock 一致，但本合約其他端點使用 `VALIDATION_FAILED`（SDK 預設）**〔待統一〕**。
 
