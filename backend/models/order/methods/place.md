@@ -19,7 +19,7 @@
 3. 查詢購物車（cart_items，user_id = ctx.user.id、未刪除），關聯 products 與 product_variants；若為空回 `CART_EMPTY`。
 4. 任一商品或所選規格已 inactive 或刪除（或商品有 options 但規格全部停用），回 `PRODUCT_UNAVAILABLE`，並在錯誤細節附上所有受影響的 cart_item id（cart_item_ids）。
 5. 扣減庫存：有 sku_id 的品項以 `UPDATE product_variants SET stock = stock - 數量 WHERE id = sku_id AND stock >= 數量`，沒有規格的品項以同樣方式更新 products；依 sku_id／product_id 由小到大的順序逐筆執行，並檢查影響列數，任一筆為 0 即回 `OUT_OF_STOCK`（整個交易回滾）。同時將對應 products 的 sold_count 加上數量（有規格時加在所屬商品）。
-6. 新增 orders 一列：status 為 pending、shipping_address 為步驟 2 地址的快照（recipient、phone、region、line1）、total_cents 為各品項單價 × 數量的總和、currency、idempotency_key。
+6. 新增 orders 一列：status 為 pending、payment_method 與 paid_at 為 null、shipping_address 為步驟 2 地址的快照（recipient、phone、region、line1）、total_cents 為各品項單價 × 數量的總和、currency、idempotency_key。
 7. 逐項新增 order_items 快照：product_id、sku_id、sku_options、name、unit_price_cents（有規格時為規格價格）、quantity、line_total_cents。
 8. 軟刪除此使用者所有 cart_items（清空購物車）。
 9. 回傳訂單 id、status、shipping_address、items、total_cents、currency、created_at。

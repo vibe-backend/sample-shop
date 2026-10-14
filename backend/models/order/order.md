@@ -9,6 +9,8 @@
 - currency：字串，必填，3 個大寫字母。
 - idempotency_key：字串，必填，1 至 64 字。
 - shipping_address：json 類型，選填；下單時的收貨地址快照，含 recipient、phone、region、line1 四個字串。之後修改地址簿不影響此快照。
+- payment_method：字串，選填，只能是 mock_card、mock_alipay 之一，預設 null；只由 order.pay 寫入。
+- paid_at：時間戳記，選填，預設 null；付款成功時由 order.pay 寫入。
 - request_hash：字串，必填，最長 64 字（建立訂單時請求 body（含 address_id）的雜湊，用於判斷同 key 不同 body）。
 
 ## 輸出
@@ -20,7 +22,7 @@
 ## CRUD
 - get。
 - list：每頁預設 20 筆、最多 100 筆，依 created_at 由新到舊排序。
-- 不提供 update、delete 給一般使用者。
+- 不提供 update、delete 給一般使用者；status 只經由 order.pay 由 pending 改為 paid。
 
 ## 政策
 - 啟用並強制 RLS（租戶欄位由平台自動加入，不需宣告）。

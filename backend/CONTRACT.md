@@ -41,6 +41,7 @@
 | 16 | `GET /shop/v1/orders/{id}` | JWT（本人） | path `id` | 200 `Order` | 404（不存在或非本人） |
 | 17 | `GET /shop/v1/addresses` | JWT（本人） | — | 200 `Address[]`（預設排最前，不分頁） | 401 |
 | 18 | `POST /shop/v1/addresses` | JWT（本人） | body `AddressInput` | 201 `Address` + `Location` | 422 `VALIDATION_FAILED`、422 `ADDRESS_LIMIT` |
+| 19 | `POST /shop/v1/orders/{id}/payments` | JWT（本人） | header `Idempotency-Key`（**必填**，§10）；body `PaymentInput` | 200 `Order`（`status: 'paid'`、`payment_method`、`paid_at`） | 400 `IDEMPOTENCY_KEY_REQUIRED`、402 `PAYMENT_DECLINED`、404 `NOT_FOUND`、409 `ORDER_NOT_PAYABLE`、409 `IDEMPOTENCY_KEY_REUSED`、422 `VALIDATION_FAILED`、504、503（§13） |
 | — | `PUT`／`DELETE /shop/v1/addresses/{id}`、`POST /shop/v1/addresses/{id}/default` | JWT（本人） | — | 規劃中（#44），v1 未實作 | — |
 
 ## 3. 資料型別
@@ -102,7 +103,9 @@ type Address = {
 type AddressInput = { recipient: string; phone: string; region: string; line1: string; is_default?: boolean };
 type AddressSnapshot = Pick<Address, 'recipient' | 'phone' | 'region' | 'line1'>;
 type CreateOrderInput = { address_id: string };
-type Order = { id: string; status: OrderStatus; shipping_address?: AddressSnapshot | null; items: OrderItem[]; total_cents: number; currency: string; created_at: string };
+type PaymentMethod = 'mock_card' | 'mock_alipay';
+type PaymentInput = { method: PaymentMethod; simulate: 'success' | 'failure' };
+type Order = { id: string; status: OrderStatus; payment_method?: PaymentMethod | null; paid_at?: string | null; shipping_address?: AddressSnapshot | null; items: OrderItem[]; total_cents: number; currency: string; created_at: string };
 ```
 
 ## 4. Token 與刷新策略
@@ -134,6 +137,8 @@ type Order = { id: string; status: OrderStatus; shipping_address?: AddressSnapsh
 | 409 | `PRODUCT_UNAVAILABLE` | 加入購物車、下單 | 商品有規格但全部停用；或下單時購物車中商品／規格已下架。下單時 `details.cart_item_ids` 列出受影響品項（§11） |
 | 400 | `IDEMPOTENCY_KEY_REQUIRED` | 下單 | 未帶 `Idempotency-Key`（§10） |
 | 409 | `IDEMPOTENCY_KEY_REUSED` | 下單 | 同一 key 但 body 不同（§10） |
+| 402 | `PAYMENT_DECLINED` | 訂單付款 | 模擬付款失敗；訂單維持 `pending`，key 不保留，可重試（§13） |
+| 409 | `ORDER_NOT_PAYABLE` | 訂單付款 | 訂單已付款或已取消，或並發付款已先成功（§13） |
 | 404 | `ADDRESS_NOT_FOUND` | 下單 | `address_id` 不存在或屬於他人（§12） |
 | 412 / 428 | — | 更新商品 | `If-Match` 不符／缺少 |
 | 422 | `VALIDATION_FAILED` | 全部 | 欄位驗證失敗或未宣告欄位 |
@@ -203,7 +208,7 @@ type Order = { id: string; status: OrderStatus; shipping_address?: AddressSnapsh
 
 ## 10. 冪等性（Idempotency-Key）
 
-適用：`POST /shop/v1/orders`。
+適用：`POST /shop/v1/orders` 與 `POST /shop/v1/orders/{id}/payments`（付款的差異見 §13）。
 
 - `Idempotency-Key` header **必填**（1–64 字，建議 UUID v4）；缺少回 400 `IDEMPOTENCY_KEY_REQUIRED`。
 - 範圍：同一使用者（JWT `sub`）＋同一路由。
@@ -239,4 +244,23 @@ type Order = { id: string; status: OrderStatus; shipping_address?: AddressSnapsh
   - `CreateOrderInput.address_id` 在 `types.ts` 為選填（`address_id?`），後端視為必填（缺少回 422）。
   - `Order.shipping_address` 在 `types.ts` 可為 null／缺少；後端新訂單一律有值，只有加入地址前的舊訂單為 null。
   - 地址驗證錯誤碼已與其他端點統一為 `VALIDATION_FAILED`（已與前端確認）。
+
+## 13. 模擬付款（前端 #30，sample-shop PR #65）
+
+- `POST /shop/v1/orders/{id}/payments`（JWT，只限本人訂單）。body `PaymentInput`：`method` 為 `mock_card`／`mock_alipay`，`simulate` 為 `success`／`failure`（示範用，不涉及真實金流）。
+- 成功：200，回傳整張 `Order`，`status: 'paid'`，並帶 `payment_method` 與 `paid_at`（ISO 8601 UTC）。新訂單的 `payment_method`、`paid_at` 為 `null`。
+- 失敗（`simulate: 'failure'`）：402 `PAYMENT_DECLINED`；不寫入任何資料，訂單維持 `pending`，key 不保留，可用同一 key 重試。
+- 其他錯誤：400 `IDEMPOTENCY_KEY_REQUIRED`；404 `NOT_FOUND`（不存在或屬於他人）；409 `ORDER_NOT_PAYABLE`（已付款或已取消）；422 `VALIDATION_FAILED`；504 `TX_TIMEOUT`；503 `TX_CONFLICT`。
+- 冪等（套用 §10）：範圍為同一使用者＋付款路由。只有成功的付款會保留 key（model `payment-attempt`：`user_id`＋`idempotency_key` 唯一、`order_id` 唯一、`request_hash`、`method`）。同一 key 且同一訂單、同一 body 重送時回 200 與該訂單；同一 key 但訂單或 body 不同回 409 `IDEMPOTENCY_KEY_REUSED`。
+- 檢查順序：訂單存在 → 重送判斷 → 欄位驗證 → `status` 必須為 `pending` → 模擬結果。
+- 並發：狀態更新使用 `UPDATE orders SET status='paid', payment_method=…, paid_at=now() WHERE id=… AND user_id=… AND status='pending'` 並檢查影響列數；為 0 回 409 `ORDER_NOT_PAYABLE`，因此兩筆並發付款只有一筆成功。更新訂單與新增 `payment_attempts` 在同一交易中完成。
+- 庫存（已決定）：v1 維持在下單時扣庫存（§4b）。
+- 規劃中／未來工作（v1 未實作）：
+  - 付款前的庫存保留（下單時只保留、付款成功才扣）。
+  - 逾時未付款訂單自動取消並回補庫存。
+  - 追蹤 issue：sample-shop #66。
+- 與 PR #65 `types.ts`／mock 的差異：
+  - mock 只驗證 `method`，不驗證 `simulate`；後端兩者都驗證，不合法回 422。
+  - mock 以同一 key 重送時不比較 body，也不回 `IDEMPOTENCY_KEY_REUSED`；後端依 §10 比較 body 雜湊與訂單 id，不同則回 409。
+  - `types.ts` 中 `payment_method`、`paid_at` 為選填；後端一律回傳（未付款時為 `null`）。
 
