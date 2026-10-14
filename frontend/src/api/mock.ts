@@ -64,6 +64,18 @@ export function freshState(): MockState {
   return { users: DEMO_USERS.map((u) => ({ ...u })), products: seedProducts(), carts: {}, orders: {}, idempotency: {}, sessions: {}, seq: 1000 };
 }
 
+/** Deep, key-order-independent JSON for idempotency body comparison (CONTRACT.md §10 normalised hash). */
+export function stableStringify(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(stableStringify).join(',')}]`;
+  if (v && typeof v === 'object')
+    return `{${Object.keys(v as object)
+      .filter((k) => (v as Record<string, unknown>)[k] !== undefined)
+      .sort()
+      .map((k) => `${JSON.stringify(k)}:${stableStringify((v as Record<string, unknown>)[k])}`)
+      .join(',')}}`;
+  return JSON.stringify(v ?? null);
+}
+
 const err = (status: number, code: string, message: string) => new ApiRequestError(status, code, message);
 
 export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockState; reset(): void } {
@@ -85,14 +97,20 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
       }
       const legacy = globalThis.localStorage?.getItem(LEGACY_KEY);
       if (legacy) {
-        globalThis.localStorage?.removeItem(LEGACY_KEY);
+        let migrated: MockState | null = null;
         try {
-          const migrated = migrateV1(JSON.parse(legacy) as MockState);
-          globalThis.localStorage?.setItem(STORAGE_KEY, JSON.stringify(migrated));
-          return migrated;
+          migrated = migrateV1(JSON.parse(legacy) as MockState);
         } catch {
-          /* corrupt v1 data: start fresh */
+          /* corrupt v1 data: start fresh (and drop it below) */
         }
+        try {
+          // Only drop v1 once v2 is safely written (or v1 is unreadable anyway).
+          if (migrated) globalThis.localStorage?.setItem(STORAGE_KEY, JSON.stringify(migrated));
+          globalThis.localStorage?.removeItem(LEGACY_KEY);
+        } catch {
+          /* quota/full storage: keep v1 so nothing is lost; retry next load */
+        }
+        if (migrated) return migrated;
       }
     }
     return freshState();
@@ -297,7 +315,7 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
         // the original order; different body → 409; failed attempts don't retain the key.
         if (!key) throw err(400, 'IDEMPOTENCY_KEY_REQUIRED', '缺少 Idempotency-Key');
         const ik = `${u.id}:${key}`;
-        const bodyHash = JSON.stringify(body, Object.keys(body).sort());
+        const bodyHash = stableStringify(body);
         const prev = state.idempotency[ik];
         if (prev) {
           if ((state.idempotency_body?.[ik] ?? '{}') !== bodyHash) throw err(409, 'IDEMPOTENCY_KEY_REUSED', '此 Idempotency-Key 已用於另一個請求');
