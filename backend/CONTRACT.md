@@ -139,7 +139,6 @@ type Order = { id: string; status: OrderStatus; shipping_address?: AddressSnapsh
 | 422 | `VALIDATION_FAILED` | 全部 | 欄位驗證失敗或未宣告欄位 |
 | 422 | `SKU_REQUIRED` | 加入購物車 | 商品有規格但未提供 `sku_id` |
 | 422 | `QUANTITY_LIMIT` | 加入購物車 | 累加後超過 99 |
-| 422 | `VALIDATION_FAILED` | 新增地址 | 地址欄位驗證失敗（§12；與其他端點的 `VALIDATION_FAILED` 不一致，見 §12） |
 | 422 | `ADDRESS_LIMIT` | 新增地址 | 已有 20 個地址 |
 | 422 | `ADDRESS_REQUIRED` | 下單 | body 缺少 `address_id` |
 | 422 | `CART_EMPTY` | 下單 | 購物車為空 |
@@ -239,5 +238,5 @@ type Order = { id: string; status: OrderStatus; shipping_address?: AddressSnapsh
   - 需求原寫 `address_line`，此處依 `types.ts` 採用 `line1`。
   - `CreateOrderInput.address_id` 在 `types.ts` 為選填（`address_id?`），後端視為必填（缺少回 422）。
   - `Order.shipping_address` 在 `types.ts` 可為 null／缺少；後端新訂單一律有值，只有加入地址前的舊訂單為 null。
-  - 地址驗證錯誤碼 `VALIDATION_FAILED` 與前端 mock 一致，但本合約其他端點使用 `VALIDATION_FAILED`（SDK 預設）**〔待統一〕**。
+  - 地址驗證錯誤碼已與其他端點統一為 `VALIDATION_FAILED`（已與前端確認）。
 
