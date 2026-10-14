@@ -1,3 +1,6 @@
+import { OrderExtras } from '../components/community';
+import { ChatButton } from '../components/shopping';
+import { API_MODE } from '../api';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { CircleCheck } from 'lucide-react';
@@ -15,7 +18,16 @@ import { PAYMENT_LABEL, PaymentPicker } from '../components/payment';
 import { ApiRequestError, type PaymentMethod } from '../api';
 import { toast } from 'sonner';
 import { Check, X } from 'lucide-react';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { STATUS_HINT, STATUS_LABEL, STEPS } from '@/lib/orderStatus';
 
 export { STATUS_LABEL };
@@ -25,7 +37,13 @@ export const formatDate = (iso: string) =>
 
 export function StatusBadge({ status }: { status: OrderStatus }) {
   const tone =
-    status === 'pending' ? 'bg-warning/15 text-warning' : status === 'paid' || status === 'shipped' ? 'bg-secondary text-secondary-foreground' : status === 'cancelled' ? '' : 'bg-success/15 text-success';
+    status === 'pending'
+      ? 'bg-warning/15 text-warning'
+      : status === 'paid' || status === 'shipped'
+        ? 'bg-secondary text-secondary-foreground'
+        : status === 'cancelled'
+          ? ''
+          : 'bg-success/15 text-success';
   return (
     <Badge variant={status === 'cancelled' ? 'secondary' : 'default'} className={cn(tone)}>
       {STATUS_LABEL[status] ?? status}
@@ -34,27 +52,70 @@ export function StatusBadge({ status }: { status: OrderStatus }) {
 }
 
 export function OrdersPage() {
+  const [params, setParams] = useSearchParams();
+  const selected = params.get('status') ?? 'all';
+  const [counts] = useAsync(() => (API_MODE === 'mock' ? api.orderCounts() : Promise.resolve(null)), [selected]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
 
-  function load(c?: string) {
+  function load(c?: string, isLive: () => boolean = () => true) {
     setLoading(true);
     api
-      .listOrders(c)
+      .listOrders(
+        c,
+        selected === 'needs_review'
+          ? { needs_review: true }
+          : selected !== 'all'
+            ? { status: selected as OrderStatus }
+            : {},
+      )
       .then((p) => {
+        if (!isLive()) return;
         setOrders((xs) => (c ? [...xs, ...p.items] : p.items));
         setCursor(p.next_cursor);
       })
-      .catch(setError)
-      .finally(() => setLoading(false));
+      .catch((e) => isLive() && setError(e))
+      .finally(() => isLive() && setLoading(false));
   }
-  useEffect(() => load(), []);
+  useEffect(() => {
+    let live = true;
+    setError(null);
+    load(undefined, () => live);
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected]);
 
   return (
     <section>
       <PageTitle>我的訂單</PageTitle>
+      <nav aria-label="訂單狀態" className="mb-4 flex flex-wrap gap-2">
+        {(
+          [
+            ['all', '全部'],
+            ['pending', '待付款'],
+            ['paid', '待發貨'],
+            ['shipped', '待收貨'],
+            ['needs_review', '待評價'],
+            ['delivered', '已完成'],
+            ['cancelled', '已取消'],
+          ] as const
+        ).map(([s, name]) => (
+          <Button
+            key={s}
+            size="sm"
+            variant={selected === s ? 'default' : 'outline'}
+            aria-pressed={selected === s}
+            onClick={() => setParams(s === 'all' ? {} : { status: s })}
+          >
+            {name}
+            {counts ? ` (${counts[s]})` : ''}
+          </Button>
+        ))}
+      </nav>
       <ErrorNote error={error} />
       {!loading && orders.length === 0 && !error ? (
         <Empty>
@@ -67,7 +128,10 @@ export function OrdersPage() {
         <ul className="grid gap-2.5">
           {orders.map((o) => (
             <li key={o.id}>
-              <Link to={`/orders/${o.id}`} className="group block rounded-xl focus-visible:ring-3 focus-visible:ring-ring focus-visible:outline-none">
+              <Link
+                to={`/orders/${o.id}`}
+                className="group block rounded-xl focus-visible:ring-3 focus-visible:ring-ring focus-visible:outline-none"
+              >
                 <Card className="py-0 transition-colors group-hover:ring-primary/60">
                   <CardContent className="grid grid-cols-[1fr_auto] items-center gap-4 py-3.5 sm:grid-cols-[1fr_auto_60px_120px]">
                     <div className="grid">
@@ -75,8 +139,12 @@ export function OrdersPage() {
                       <span className="text-muted-foreground">{formatDate(o.created_at)}</span>
                     </div>
                     <StatusBadge status={o.status} />
-                    <span className="hidden text-muted-foreground sm:block">{o.items.reduce((s, i) => s + i.quantity, 0)} 件</span>
-                    <strong className="col-span-2 text-right sm:col-span-1">{formatPrice(o.total_cents, o.currency)}</strong>
+                    <span className="hidden text-muted-foreground sm:block">
+                      {o.items.reduce((s, i) => s + i.quantity, 0)} 件
+                    </span>
+                    <strong className="col-span-2 text-right sm:col-span-1">
+                      {formatPrice(o.total_cents, o.currency)}
+                    </strong>
                   </CardContent>
                 </Card>
               </Link>
@@ -101,6 +169,12 @@ export function OrderDetailPage() {
   const [params] = useSearchParams();
   const [o, error, loading, reload] = useAsync(() => api.getOrder(id), [id]);
   const [ask, setAsk] = useState<'cancel' | 'deliver' | null>(null);
+  const [cancelReason, setCancelReason] = useState('不想購買');
+  useEffect(() => {
+    if (o?.status !== 'pending') return;
+    const timer = setInterval(reload, 15000);
+    return () => clearInterval(timer);
+  }, [o?.status, reload]);
   const [busy, setBusy] = useState(false);
   const [live, setLive] = useState('');
   if (loading && !o) return <Spinner />;
@@ -110,7 +184,7 @@ export function OrderDetailPage() {
     setBusy(true);
     setLive('處理中…');
     try {
-      await (kind === 'cancel' ? api.cancelOrder(o!.id) : api.confirmDelivery(o!.id));
+      await (kind === 'cancel' ? api.cancelOrder(o!.id, cancelReason) : api.confirmDelivery(o!.id));
       const msg = kind === 'cancel' ? '訂單已取消' : '已確認收貨';
       setLive(msg);
       toast.success(msg);
@@ -130,7 +204,10 @@ export function OrderDetailPage() {
         {live}
       </p>
       {params.get('paid') && o.status === 'paid' && (
-        <div className="mb-5 flex items-center gap-4 rounded-xl border border-success/35 bg-success/10 p-5" role="status">
+        <div
+          className="mb-5 flex items-center gap-4 rounded-xl border border-success/35 bg-success/10 p-5"
+          role="status"
+        >
           <CircleCheck className="size-11 shrink-0 text-success" aria-hidden="true" />
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">付款成功</h1>
@@ -153,7 +230,12 @@ export function OrderDetailPage() {
         </CardContent>
         {(o.status === 'pending' || o.status === 'paid' || o.status === 'shipped') && (
           <CardContent>
-            <div className={cn('flex flex-wrap items-center justify-end gap-3 rounded-lg p-3', o.status === 'pending' ? 'bg-warning/10' : 'bg-muted')}>
+            <div
+              className={cn(
+                'flex flex-wrap items-center justify-end gap-3 rounded-lg p-3',
+                o.status === 'pending' ? 'bg-warning/10' : 'bg-muted',
+              )}
+            >
               {o.status === 'pending' && <span className="mr-auto text-sm">此訂單尚未付款。</span>}
               {(o.status === 'pending' || o.status === 'paid') && (
                 <Button variant="outline" disabled={busy} onClick={() => setAsk('cancel')}>
@@ -179,7 +261,10 @@ export function OrderDetailPage() {
             <ol className="grid gap-1 text-sm">
               {[...o.status_history].reverse().map((h, i) => (
                 <li key={i} className="flex gap-3">
-                  <time className="shrink-0 whitespace-nowrap text-muted-foreground tabular-nums sm:w-48" dateTime={h.at}>
+                  <time
+                    className="shrink-0 whitespace-nowrap text-muted-foreground tabular-nums sm:w-48"
+                    dateTime={h.at}
+                  >
                     {formatDate(h.at)}
                   </time>
                   <span>{STATUS_LABEL[h.status]}</span>
@@ -231,14 +316,37 @@ export function OrderDetailPage() {
           </Table>
         </CardContent>
       </Card>
+      <div className="mt-3">
+        <ChatButton orderId={o.id} />
+      </div>
+      <OrderExtras key={o.id} order={o} reload={reload} />
       <AlertDialog open={ask !== null} onOpenChange={(v) => !v && setAsk(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{ask === 'cancel' ? '確定取消此訂單？' : '確認已收到商品？'}</AlertDialogTitle>
             <AlertDialogDescription>
-              {ask === 'cancel' ? (o.status === 'paid' ? '取消後款項將按原付款方式退回（模擬），庫存會歸還。' : '取消後庫存會歸還，此操作無法復原。') : '確認後訂單將標示為已送達，此操作無法復原。'}
+              {ask === 'cancel'
+                ? o.status === 'paid'
+                  ? '取消後款項將按原付款方式退回（模擬），庫存會歸還。'
+                  : '取消後庫存會歸還，此操作無法復原。'
+                : '確認後訂單將標示為已送達，此操作無法復原。'}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {ask === 'cancel' && (
+            <label className="text-sm">
+              取消原因
+              <select
+                aria-label="取消原因"
+                className="ml-2 rounded border bg-card p-2"
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+              >
+                {['不想購買', '買錯商品', '需要修改地址', '其他'].map((r) => (
+                  <option key={r}>{r}</option>
+                ))}
+              </select>
+            </label>
+          )}
           <AlertDialogFooter>
             <AlertDialogCancel disabled={busy}>返回</AlertDialogCancel>
             <AlertDialogAction
@@ -273,16 +381,26 @@ export function StatusProgress({ order }: { order: Order }) {
         const done = i < cur;
         const now = i === cur;
         return (
-          <li key={s} aria-current={now ? 'step' : undefined} className="flex flex-col items-center gap-1 text-center text-xs">
+          <li
+            key={s}
+            aria-current={now ? 'step' : undefined}
+            className="flex flex-col items-center gap-1 text-center text-xs"
+          >
             <span
               className={cn(
                 'grid size-7 place-items-center rounded-full border-2 text-xs font-semibold',
-                done ? 'border-primary bg-primary text-primary-foreground' : now ? 'border-primary text-primary' : 'border-border text-muted-foreground',
+                done
+                  ? 'border-primary bg-primary text-primary-foreground'
+                  : now
+                    ? 'border-primary text-primary'
+                    : 'border-border text-muted-foreground',
               )}
             >
               {done ? <Check className="size-4" aria-hidden="true" /> : i + 1}
             </span>
-            <span className={cn(now ? 'font-semibold text-foreground' : done ? 'text-foreground' : 'text-muted-foreground')}>
+            <span
+              className={cn(now ? 'font-semibold text-foreground' : done ? 'text-foreground' : 'text-muted-foreground')}
+            >
               {STATUS_LABEL[s]}
               {done && <span className="sr-only">（已完成）</span>}
             </span>
@@ -295,13 +413,19 @@ export function StatusProgress({ order }: { order: Order }) {
 
 /** Simulated payment page (#30): choose a demo method, then force success or failure. */
 /** A payment error that ends this attempt for sure (vs. timeouts / conflicts that may have succeeded server-side). */
-const isDefinitive = (e: unknown) => e instanceof ApiRequestError && e.status >= 400 && e.status < 500 && e.status !== 409 && e.status !== 408;
+const isDefinitive = (e: unknown) =>
+  e instanceof ApiRequestError && e.status >= 400 && e.status < 500 && e.status !== 409 && e.status !== 408;
 
 export function PayPage() {
   const { id = '' } = useParams();
   const [params] = useSearchParams();
   const nav = useNavigate();
   const [o, error, loading, reload] = useAsync(() => api.getOrder(id), [id]);
+  useEffect(() => {
+    if (o?.status !== 'pending') return;
+    const timer = setInterval(reload, 15000);
+    return () => clearInterval(timer);
+  }, [o?.status, reload]);
   const [picked, setPicked] = useState<PaymentMethod | null>(null);
   const [busy, setBusy] = useState(false);
   const [payErr, setPayErr] = useState<unknown>(null);
@@ -315,7 +439,8 @@ export function PayPage() {
   if (loading) return <Spinner />;
   if (!o) return <ErrorNote error={error} />;
   const fromCheckout = params.get('method');
-  const method: PaymentMethod = picked ?? (fromCheckout === 'mock_alipay' || fromCheckout === 'mock_card' ? fromCheckout : 'mock_card');
+  const method: PaymentMethod =
+    picked ?? (fromCheckout === 'mock_alipay' || fromCheckout === 'mock_card' ? fromCheckout : 'mock_card');
 
   function changeMethod(m: PaymentMethod) {
     if (m !== method) keyRef.current = null;
@@ -353,7 +478,10 @@ export function PayPage() {
   return (
     <section className="mx-auto max-w-xl">
       {params.get('placed') && (
-        <div className="mb-5 flex items-center gap-4 rounded-xl border border-success/35 bg-success/10 p-4" role="status">
+        <div
+          className="mb-5 flex items-center gap-4 rounded-xl border border-success/35 bg-success/10 p-4"
+          role="status"
+        >
           <CircleCheck className="size-9 shrink-0 text-success" aria-hidden="true" />
           <div>
             <h1 className="text-xl font-semibold tracking-tight">訂單已成立</h1>
@@ -372,14 +500,19 @@ export function PayPage() {
         </CardHeader>
         <CardContent className="grid gap-4">
           <PaymentPicker value={method} onChange={changeMethod} />
-          <p className="rounded-lg bg-muted p-3 text-xs text-muted-foreground">示範付款：不會收取真實款項，亦毋須輸入卡號。請選擇模擬結果。</p>
+          <p className="rounded-lg bg-muted p-3 text-xs text-muted-foreground">
+            示範付款：不會收取真實款項，亦毋須輸入卡號。請選擇模擬結果。
+          </p>
           <p className="sr-only" role="status" aria-live="polite">
             {busy ? '處理中…' : ''}
           </p>
           {payErr != null && (
             <div ref={errRef} tabIndex={-1} className="outline-none">
               {declined ? (
-                <div role="alert" className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+                <div
+                  role="alert"
+                  className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
+                >
                   付款失敗（模擬）。訂單仍為「待付款」，你可以重試或更換付款方式。
                 </div>
               ) : (

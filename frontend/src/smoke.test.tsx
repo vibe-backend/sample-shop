@@ -24,7 +24,7 @@ describe('smoke render (mock mode)', () => {
   it('renders the product list with products', async () => {
     renderAt('/');
     expect(screen.getByRole('heading', { name: '精選好物' })).toBeTruthy();
-    await waitFor(() => expect(screen.getByText('楓糖堅果燕麥脆片')).toBeTruthy(), { timeout: 5000 });
+    await waitFor(() => expect(screen.getAllByText('楓糖堅果燕麥脆片')[0]).toBeTruthy(), { timeout: 5000 });
   });
 
   it('renders the login page with demo accounts', () => {
@@ -33,9 +33,10 @@ describe('smoke render (mock mode)', () => {
     expect(screen.getByText('示範帳戶')).toBeTruthy();
   });
 
-  it('redirects the cart to login when signed out', async () => {
+  it('shows the guest cart when signed out', async () => {
     renderAt('/cart');
-    await waitFor(() => expect(screen.getByRole('heading', { name: '登入' })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole('heading', { name: '購物車' })).toBeTruthy());
+    expect(screen.getByText(/訪客購物車/)).toBeTruthy();
   });
 
   it('applies the dark class from the saved theme', () => {

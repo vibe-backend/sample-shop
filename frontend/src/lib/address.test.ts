@@ -10,6 +10,9 @@ describe('address validation', () => {
   });
   it('checks HK phone format', () => {
     expect(isHkPhone('+852 6123-4567')).toBe(true);
+    expect(isHkPhone('85212345')).toBe(true);
+    expect(isHkPhone('852 6123-4567')).toBe(true);
+    expect(isHkPhone('+85212345')).toBe(false);
     expect(isHkPhone('12345678')).toBe(false);
     expect(isHkPhone('9123456')).toBe(false);
     expect(validateAddress({ recipient: 'a', phone: '1234', region: '九龍', line1: '12345' }).phone).toBe('請輸入 8 位香港電話號碼');

@@ -1,0 +1,70 @@
+// @vitest-environment jsdom
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { MemoryRouter } from 'react-router-dom';
+import { api, tokenStore, resetMockData } from './api';
+import { AuthProvider } from './auth';
+import { ThemeProvider } from './theme';
+import App from './App';
+const renderAt = (path: string) =>
+  render(
+    <ThemeProvider>
+      <MemoryRouter initialEntries={[path]}>
+        <AuthProvider>
+          <App />
+        </AuthProvider>
+      </MemoryRouter>
+    </ThemeProvider>,
+  );
+beforeEach(() => {
+  tokenStore.clear();
+  resetMockData?.();
+});
+afterEach(() => {
+  cleanup();
+  tokenStore.clear();
+});
+describe('shopping draft flows', () => {
+  it('keeps buy-now checkout separate from an existing cart through order placement', async () => {
+    tokenStore.set(await api.login({ email: 'demo@example.com', password: 'demo1234' }));
+    const before = await api.addCartItem('p_010', 2);
+    renderAt('/products/p_007');
+    await screen.findByRole('button', { name: '帳戶' }, { timeout: 5000 });
+    fireEvent.click(await screen.findByRole('button', { name: '立即購買' }));
+    const submit = await screen.findByRole('button', { name: '確認下單' });
+    expect(screen.queryByText('鋁合金手機架')).toBeNull();
+    fireEvent.click(submit);
+    await screen.findByRole('button', { name: '模擬付款成功' }, { timeout: 5000 });
+    const o = (await api.listOrders()).items[0];
+    expect(o.items).toHaveLength(1);
+    expect(o.items[0].product_id).toBe('p_007');
+    expect(await api.getCart()).toEqual(before);
+  }, 15000);
+  it('selects partial checkout and leaves unchecked items in the cart', async () => {
+    tokenStore.set(await api.login({ email: 'demo@example.com', password: 'demo1234' }));
+    await api.addCartItem('p_007', 1);
+    await api.addCartItem('p_010', 1);
+    renderAt('/cart');
+    const check = await screen.findByRole('checkbox', { name: '選擇 鋁合金手機架' }, { timeout: 5000 });
+    fireEvent.click(check);
+    fireEvent.click(screen.getByRole('button', { name: '前往結帳' }));
+    const submit = await screen.findByRole('button', { name: '確認下單' });
+    fireEvent.click(submit);
+    await screen.findByRole('button', { name: '模擬付款成功' }, { timeout: 5000 });
+    expect((await api.getCart()).items.map((it) => it.product.id)).toEqual(['p_010']);
+  }, 15000);
+  it('allows gallery switching and supports a direct category URL with a 404 for unknown slugs', async () => {
+    const { unmount } = renderAt('/products/p_001');
+    const image = await screen.findByRole('img', { name: '手工陶瓷馬克杯' }, { timeout: 5000 });
+    const first = image.getAttribute('src');
+    fireEvent.click(screen.getByRole('button', { name: '商品圖片 2' }));
+    expect(image.getAttribute('src')).not.toBe(first);
+    unmount();
+    const { unmount: second } = renderAt('/category/kitchen');
+    await screen.findByRole('navigation', { name: '麵包屑' });
+    await waitFor(() => expect(screen.getByRole('heading', { name: '廚房', level: 1 })).toBeTruthy());
+    second();
+    renderAt('/category/unknown');
+    expect(screen.getByRole('heading', { name: '找不到分類（404）' })).toBeTruthy();
+  }, 15000);
+});

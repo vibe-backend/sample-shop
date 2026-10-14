@@ -8,7 +8,10 @@ export const MAX_ADDRESSES = 20;
 export type AddressErrors = Partial<Record<keyof AddressInput, string>>;
 
 /** HK phone: 8 digits starting 2–9, optional +852 / spaces / hyphen. */
-export const normalisePhone = (s: string) => s.replace(/[\s-]/g, '').replace(/^\+?852/, '');
+export const normalisePhone = (s: string) => {
+  const compact = s.replace(/[\s-]/g, '');
+  return /^(?:\+852|852)[2-9]\d{7}$/.test(compact) ? compact.replace(/^\+?852/, '') : compact;
+};
 export const isHkPhone = (s: string) => /^[2-9]\d{7}$/.test(normalisePhone(s));
 
 /** Shared by the checkout form and the mock server; empty object = valid. */

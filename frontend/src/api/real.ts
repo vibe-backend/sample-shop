@@ -12,6 +12,7 @@ import {
   type ProductInput,
   type ProductQuery,
   type ShopApi,
+  type ShopFeatures,
 } from './types';
 import { tokenStore } from './token';
 
@@ -26,14 +27,23 @@ export function setRetrySleep(fn: (ms: number) => Promise<void>) {
 export function createRealApi(baseUrl: string, slug: string): ShopApi {
   const base = baseUrl.replace(/\/$/, '');
 
-  async function req<T>(method: string, path: string, body?: unknown, headers: Record<string, string> = {}): Promise<T> {
+  async function req<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+    headers: Record<string, string> = {},
+  ): Promise<T> {
     const h: Record<string, string> = { Accept: 'application/json', ...headers };
     const token = tokenStore.get();
     if (token) h.Authorization = `Bearer ${token}`;
     if (body !== undefined) h['Content-Type'] = 'application/json';
     let res: Response;
     try {
-      res = await fetch(base + path, { method, headers: h, body: body === undefined ? undefined : JSON.stringify(body) });
+      res = await fetch(base + path, {
+        method,
+        headers: h,
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
     } catch {
       throw new ApiRequestError(0, 'NETWORK_ERROR', '無法連線到伺服器');
     }
@@ -78,17 +88,66 @@ export function createRealApi(baseUrl: string, slug: string): ShopApi {
 
   const cat = `/catalog/v1/${encodeURIComponent(slug)}/products`;
 
+  const unsupported = () =>
+    Promise.reject(new ApiRequestError(501, 'FEATURE_NOT_AVAILABLE', '此功能目前只支援示範模式；正式後端合約尚未實作'));
+  const features: ShopFeatures = {
+    updateMe: unsupported,
+    changePassword: unsupported,
+    requestPasswordReset: unsupported,
+    resetPassword: unsupported,
+    listFavorites: unsupported,
+    setFavorite: unsupported,
+    followShop: unsupported,
+    isFollowingShop: unsupported,
+    listCoupons: unsupported,
+    claimCoupon: unsupported,
+    wallet: unsupported,
+    orderCounts: unsupported,
+    hideOrder: unsupported,
+    reorder: unsupported,
+    listReviews: unsupported,
+    createReview: unsupported,
+    listQuestions: unsupported,
+    askQuestion: unsupported,
+    answerQuestion: unsupported,
+    listAfterSales: unsupported,
+    createAfterSale: unsupported,
+    decideAfterSale: unsupported,
+    submitReturnShipment: unsupported,
+    listVariants: unsupported,
+    createVariant: unsupported,
+    updateVariant: unsupported,
+  };
   return {
+    ...features,
     login: (c) => req<AuthToken>('POST', `/users/v1/${encodeURIComponent(slug)}/login`, c),
     register: (r) => req<AuthToken>('POST', `/users/v1/${encodeURIComponent(slug)}/register`, r),
     me: () => req<Me>('GET', '/users/v1/me'),
     listProducts: (q = {}) => {
       const { sort, ...rest } = q;
-      return req<Page<Product>>('GET', cat + qs({ ...rest, ...sortParam(sort) }));
+      return req<Page<Product>>(
+        'GET',
+        cat +
+          qs({
+            ...rest,
+            brands: rest.brands?.join(','),
+            attributes: rest.attributes ? JSON.stringify(rest.attributes) : undefined,
+            ...sortParam(sort),
+          }),
+      );
     },
     listStaffProducts: (q = {}) => {
       const { sort, ...rest } = q;
-      return req<Page<Product>>('GET', `/catalog/v1/${encodeURIComponent(slug)}/staff/products` + qs({ ...rest, ...sortParam(sort) }));
+      return req<Page<Product>>(
+        'GET',
+        `/catalog/v1/${encodeURIComponent(slug)}/staff/products` +
+          qs({
+            ...rest,
+            brands: rest.brands?.join(','),
+            attributes: rest.attributes ? JSON.stringify(rest.attributes) : undefined,
+            ...sortParam(sort),
+          }),
+      );
     },
     getProduct: (id) => req<Product>('GET', `${cat}/${encodeURIComponent(id)}`),
     getCart: () => req<Cart>('GET', '/shop/v1/cart-items'),
@@ -98,16 +157,23 @@ export function createRealApi(baseUrl: string, slug: string): ShopApi {
     removeCartItem: (id) => req<Cart>('DELETE', `/shop/v1/cart-items/${encodeURIComponent(id)}`),
     // CONTRACT.md §10 @a3d4304 (backend/markdown-v1): Idempotency-Key is required; on 503 TX_CONFLICT or a
     // network error, wait Retry-After (default 1s) and retry with the SAME key, at most twice.
-    createOrder: (key, body) => withRetry(() => req<Order>('POST', '/shop/v1/orders', body, { 'Idempotency-Key': key })),
-    listOrders: (cursor) => req<Page<Order>>('GET', '/shop/v1/orders' + qs({ cursor })),
+    createOrder: (key, body) =>
+      withRetry(() => req<Order>('POST', '/shop/v1/orders', body, { 'Idempotency-Key': key })),
+    listOrders: (cursor, query = {}) =>
+      query.status || query.needs_review ? unsupported() : req<Page<Order>>('GET', '/shop/v1/orders' + qs({ cursor })),
     getOrder: (id) => req<Order>('GET', `/shop/v1/orders/${encodeURIComponent(id)}`),
     // §13 @a3d4304
     // Same TX_CONFLICT / network retry rule as orders (§13 lists 503/504), always with the same key.
-    payOrder: (id, p, key) => withRetry(() => req<Order>('POST', `/shop/v1/orders/${encodeURIComponent(id)}/payments`, p, { 'Idempotency-Key': key })),
+    payOrder: (id, p, key) =>
+      withRetry(() =>
+        req<Order>('POST', `/shop/v1/orders/${encodeURIComponent(id)}/payments`, p, { 'Idempotency-Key': key }),
+      ),
     cancelOrder: (id) => req<Order>('POST', `/shop/v1/orders/${encodeURIComponent(id)}/cancel`, {}),
     confirmDelivery: (id) => req<Order>('POST', `/shop/v1/orders/${encodeURIComponent(id)}/confirm-delivery`, {}),
-    listStaffOrders: (q: { status?: OrderStatus; cursor?: string } = {}) => req<Page<StaffOrder>>('GET', '/shop/v1/staff/orders' + qs(q)),
-    updateStaffOrderStatus: (id, status) => req<StaffOrder>('PUT', `/shop/v1/staff/orders/${encodeURIComponent(id)}/status`, { status }),
+    listStaffOrders: (q: { status?: OrderStatus; cursor?: string } = {}) =>
+      req<Page<StaffOrder>>('GET', '/shop/v1/staff/orders' + qs(q)),
+    updateStaffOrderStatus: (id, status) =>
+      req<StaffOrder>('PUT', `/shop/v1/staff/orders/${encodeURIComponent(id)}/status`, { status }),
     // §2 #17/#18, §12 @a3d4304
     listAddresses: () => req<Address[]>('GET', '/shop/v1/addresses'),
     createAddress: (a) => req<Address>('POST', '/shop/v1/addresses', a),

@@ -14,8 +14,12 @@ const ALL = 'all';
 
 /** Staff order list (#34): filter by status, mark paid orders shipped, or cancel. */
 export function StaffOrdersPage() {
+  const [cursor, setCursor] = useState<string | undefined>();
   const [status, setStatus] = useState<OrderStatus | typeof ALL>(ALL);
-  const [page, error, loading, reload] = useAsync(() => api.listStaffOrders(status === ALL ? {} : { status }), [status]);
+  const [page, error, loading, reload] = useAsync(
+    () => api.listStaffOrders({ status: status === ALL ? undefined : status, cursor }),
+    [status, cursor],
+  );
   const [busy, setBusy] = useState<string | null>(null);
   const [live, setLive] = useState('');
 
@@ -47,7 +51,13 @@ export function StaffOrdersPage() {
         <label htmlFor="staff-status" className="text-sm text-muted-foreground">
           狀態
         </label>
-        <Select value={status} onValueChange={(v) => setStatus(v as OrderStatus | typeof ALL)}>
+        <Select
+          value={status}
+          onValueChange={(v) => {
+            setStatus(v as OrderStatus | typeof ALL);
+            setCursor(undefined);
+          }}
+        >
           <SelectTrigger id="staff-status" className="w-36">
             <SelectValue />
           </SelectTrigger>
@@ -83,7 +93,10 @@ export function StaffOrdersPage() {
             <TableBody>
               {page.items.map((o) => (
                 <TableRow key={o.id}>
-                  <TableCell className="font-medium">#{o.id}</TableCell>
+                  <TableCell className="font-medium">
+                    #{o.id}
+                    {o.note && <p className="max-w-48 text-xs font-normal text-muted-foreground">留言：{o.note}</p>}
+                  </TableCell>
                   <TableCell>{o.buyer.display_name}</TableCell>
                   <TableCell className="tabular-nums">{formatDate(o.created_at)}</TableCell>
                   <TableCell>{formatPrice(o.total_cents, o.currency)}</TableCell>
@@ -92,12 +105,23 @@ export function StaffOrdersPage() {
                   </TableCell>
                   <TableCell className="space-x-2 text-right">
                     {canTransition(o.status, 'shipped', 'staff') && (
-                      <Button size="sm" disabled={busy === o.id} onClick={() => move(o, 'shipped')} aria-label={`訂單 #${o.id} 標示出貨`}>
+                      <Button
+                        size="sm"
+                        disabled={busy === o.id}
+                        onClick={() => move(o, 'shipped')}
+                        aria-label={`訂單 #${o.id} 標示出貨`}
+                      >
                         標示出貨
                       </Button>
                     )}
                     {canTransition(o.status, 'cancelled', 'staff') && (
-                      <Button size="sm" variant="outline" disabled={busy === o.id} onClick={() => move(o, 'cancelled')} aria-label={`取消訂單 #${o.id}`}>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={busy === o.id}
+                        onClick={() => move(o, 'cancelled')}
+                        aria-label={`取消訂單 #${o.id}`}
+                      >
                         取消
                       </Button>
                     )}
@@ -108,8 +132,24 @@ export function StaffOrdersPage() {
           </Table>
         </Card>
       )}
+      <div className="mt-3 flex gap-2">
+        {cursor && (
+          <Button variant="outline" onClick={() => setCursor(undefined)}>
+            第一頁
+          </Button>
+        )}
+        {page?.next_cursor && (
+          <Button variant="outline" onClick={() => setCursor(page.next_cursor!)}>
+            下一頁
+          </Button>
+        )}
+      </div>
       <p className="mt-3 text-xs text-muted-foreground">
-        付款由模擬付款閘道處理（<Link to="/orders" className="underline">買家訂單</Link>）；買家收貨後自行確認送達。
+        付款由模擬付款閘道處理（
+        <Link to="/orders" className="underline">
+          買家訂單
+        </Link>
+        ）；買家收貨後自行確認送達。
       </p>
     </section>
   );

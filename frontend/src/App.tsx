@@ -1,3 +1,15 @@
+import {
+  AccountExtras,
+  FavoritesPage,
+  HistoryPage,
+  CouponsPage,
+  ForgotPasswordPage,
+  HelpPage,
+} from './pages/AccountFeatures';
+import { VariantsPage } from './pages/Variants';
+import { StaffAfterSalesPage } from './components/community';
+import { SearchSuggestions, StoreCard } from './components/shopping';
+import { recordSearch } from './lib/browsing';
 import { AddressBookPage } from './pages/Addresses';
 import { StaffOrdersPage } from './pages/StaffOrders';
 import { useEffect, useState, type FormEvent } from 'react';
@@ -36,7 +48,12 @@ function ThemeMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" aria-label={`主題：${THEME_LABEL[theme]}`} title={`主題：${THEME_LABEL[theme]}`}>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label={`主題：${THEME_LABEL[theme]}`}
+          title={`主題：${THEME_LABEL[theme]}`}
+        >
           <Icon />
         </Button>
       </DropdownMenuTrigger>
@@ -55,7 +72,10 @@ function ThemeMenu() {
 }
 
 const navClass = ({ isActive }: { isActive: boolean }) =>
-  cn('text-sm transition-colors hover:text-foreground', isActive ? 'text-foreground font-medium' : 'text-muted-foreground');
+  cn(
+    'text-sm transition-colors hover:text-foreground',
+    isActive ? 'text-foreground font-medium' : 'text-muted-foreground',
+  );
 
 /** Wide header search with an orange button; submits to the home page's ?q= filter. */
 function HeaderSearch({ className }: { className?: string }) {
@@ -64,9 +84,12 @@ function HeaderSearch({ className }: { className?: string }) {
   const { pathname } = useLocation();
   const q = pathname === '/' ? (params.get('q') ?? '') : '';
   const [draft, setDraft] = useState(q);
+  const [focused, setFocused] = useState(false);
   useEffect(() => setDraft(q), [q]);
   function submit(e: FormEvent) {
     e.preventDefault();
+    recordSearch(draft);
+    setFocused(false);
     const n = pathname === '/' ? new URLSearchParams(params) : new URLSearchParams();
     if (draft.trim()) n.set('q', draft.trim());
     else n.delete('q');
@@ -74,12 +97,47 @@ function HeaderSearch({ className }: { className?: string }) {
     nav(s ? `/?${s}` : '/');
   }
   return (
-    <form role="search" onSubmit={submit} className={cn('flex h-10 items-stretch rounded-full border-2 border-brand bg-card focus-within:ring-3 focus-within:ring-ring', className)}>
+    <form
+      role="search"
+      onSubmit={submit}
+      onFocus={() => setFocused(true)}
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget)) setFocused(false);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') setFocused(false);
+        if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && e.target instanceof HTMLInputElement) {
+          e.preventDefault();
+          e.currentTarget.querySelector<HTMLElement>('[aria-label="搜尋建議"]')?.focus();
+        }
+      }}
+      className={cn(
+        'relative flex h-10 items-stretch rounded-full border-2 border-brand bg-card focus-within:ring-3 focus-within:ring-ring',
+        className,
+      )}
+    >
       <Search className="my-auto ml-3 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-      <Input type="search" placeholder="搜尋商品…" aria-label="搜尋商品" className="h-full flex-1 border-0 bg-transparent shadow-none focus-visible:ring-0 dark:bg-transparent" value={draft} onChange={(e) => setDraft(e.target.value)} />
+      <Input
+        type="search"
+        placeholder="搜尋商品…"
+        aria-label="搜尋商品"
+        className="h-full flex-1 border-0 bg-transparent shadow-none focus-visible:ring-0 dark:bg-transparent"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+      />
       <Button type="submit" className="m-0.5 h-auto rounded-full px-5 sm:px-7">
         搜尋
       </Button>
+      {focused && (
+        <SearchSuggestions
+          value={draft}
+          choose={(term) => {
+            setDraft(term);
+            setFocused(false);
+            nav(`/?q=${encodeURIComponent(term)}`);
+          }}
+        />
+      )}
     </form>
   );
 }
@@ -95,30 +153,59 @@ function AccountPage() {
         <div className="text-sm">{me?.email}</div>
       </div>
       <nav className="grid divide-y rounded-xl bg-card" aria-label="帳戶">
-        <Link to="/orders" className="px-4 py-3">我的訂單</Link>
-        <Link to="/account/addresses" className="px-4 py-3">收貨地址</Link>
-        {isStaff && <Link to="/staff/products" className="px-4 py-3">商品管理</Link>}
-        {isStaff && <Link to="/staff/orders" className="px-4 py-3">訂單管理</Link>}
-        <button type="button" className="px-4 py-3 text-left text-destructive" onClick={() => { logout(); nav('/'); }}>
+        <Link to="/orders" className="px-4 py-3">
+          我的訂單
+        </Link>
+        <Link to="/account/addresses" className="px-4 py-3">
+          收貨地址
+        </Link>
+        {isStaff && (
+          <Link to="/staff/products" className="px-4 py-3">
+            商品管理
+          </Link>
+        )}
+        {isStaff && (
+          <Link to="/staff/orders" className="px-4 py-3">
+            訂單管理
+          </Link>
+        )}
+        <button
+          type="button"
+          className="px-4 py-3 text-left text-destructive"
+          onClick={() => {
+            logout();
+            nav('/');
+          }}
+        >
           登出
         </button>
       </nav>
+      <AccountExtras />
     </section>
   );
 }
 
 /** Mobile-only bottom tab bar. */
 function BottomTabs({ cartCount, signedIn }: { cartCount: number; signedIn: boolean }) {
-  const tab = ({ isActive }: { isActive: boolean }) => cn('relative flex flex-1 flex-col items-center gap-0.5 py-1.5 text-[11px]', isActive ? 'text-primary' : 'text-muted-foreground');
+  const tab = ({ isActive }: { isActive: boolean }) =>
+    cn(
+      'relative flex flex-1 flex-col items-center gap-0.5 py-1.5 text-[11px]',
+      isActive ? 'text-primary' : 'text-muted-foreground',
+    );
   return (
-    <nav aria-label="底部分頁" className="fixed inset-x-0 bottom-0 z-40 flex border-t bg-card/95 pb-[env(safe-area-inset-bottom)] backdrop-blur sm:hidden">
+    <nav
+      aria-label="底部分頁"
+      className="fixed inset-x-0 bottom-0 z-40 flex border-t bg-card/95 pb-[env(safe-area-inset-bottom)] backdrop-blur sm:hidden"
+    >
       <NavLink to="/" end className={tab}>
         <House className="size-5" aria-hidden="true" />
         首頁
       </NavLink>
       <NavLink to="/cart" className={tab}>
         <ShoppingCart className="size-5" aria-hidden="true" />
-        {cartCount > 0 && <Badge className="absolute top-0.5 left-1/2 ml-1 h-4 min-w-4 px-1 text-[10px]">{cartCount}</Badge>}
+        {cartCount > 0 && (
+          <Badge className="absolute top-0.5 left-1/2 ml-1 h-4 min-w-4 px-1 text-[10px]">{cartCount}</Badge>
+        )}
         購物車
       </NavLink>
       <NavLink to="/orders" className={tab}>
@@ -140,6 +227,7 @@ export default function App() {
     { to: '/', label: '商品', end: true, show: true },
     { to: '/orders', label: '訂單', end: false, show: !!me },
     { to: '/staff/products', label: '商品管理', end: false, show: isStaff },
+    { to: '/staff/after-sales', label: '售後管理', end: false, show: isStaff && API_MODE === 'mock' },
     { to: '/staff/orders', label: '訂單管理', end: false, show: isStaff },
   ].filter((l) => l.show);
 
@@ -165,7 +253,16 @@ export default function App() {
               <nav className="flex flex-col gap-1 px-4" aria-label="主選單">
                 {links.map((l) => (
                   <SheetClose asChild key={l.to}>
-                    <NavLink to={l.to} end={l.end} className={({ isActive }) => cn('rounded-md px-3 py-2 text-base', isActive ? 'bg-muted font-medium' : 'text-muted-foreground')}>
+                    <NavLink
+                      to={l.to}
+                      end={l.end}
+                      className={({ isActive }) =>
+                        cn(
+                          'rounded-md px-3 py-2 text-base',
+                          isActive ? 'bg-muted font-medium' : 'text-muted-foreground',
+                        )
+                      }
+                    >
                       {l.label}
                     </NavLink>
                   </SheetClose>
@@ -188,13 +285,16 @@ export default function App() {
             <Button variant="ghost" size="icon" asChild className="relative">
               <Link to="/cart" aria-label={`購物車，${cartCount} 件`}>
                 <ShoppingCart />
-                {cartCount > 0 && <Badge className="absolute -top-1 -right-1 h-4 min-w-4 px-1 text-[10px]">{cartCount}</Badge>}
+                {cartCount > 0 && (
+                  <Badge className="absolute -top-1 -right-1 h-4 min-w-4 px-1 text-[10px]">{cartCount}</Badge>
+                )}
               </Link>
             </Button>
             {me ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon" aria-label="帳戶">
+                  <Button variant="ghost" size="sm" aria-label="帳戶">
+                    <span className="hidden max-w-24 truncate sm:inline">{me.display_name}</span>
                     <User />
                   </Button>
                 </DropdownMenuTrigger>
@@ -204,6 +304,7 @@ export default function App() {
                     <div className="text-xs font-normal text-muted-foreground">{me.email}</div>
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={() => nav('/account')}>個人中心</DropdownMenuItem>
                   <DropdownMenuItem onSelect={() => nav('/orders')}>我的訂單</DropdownMenuItem>
                   <DropdownMenuItem onSelect={() => nav('/account/addresses')}>收貨地址</DropdownMenuItem>
                   {isStaff && <DropdownMenuItem onSelect={() => nav('/staff/products')}>商品管理</DropdownMenuItem>}
@@ -249,20 +350,142 @@ export default function App() {
       <main className="mx-auto w-full max-w-7xl flex-1 px-3 pt-4 pb-24 sm:px-6 sm:pt-6 sm:pb-12">
         <Routes>
           <Route path="/" element={<ProductListPage />} />
+          <Route path="/category/:slug" element={<ProductListPage />} />
+          <Route
+            path="/shop"
+            element={
+              <>
+                <StoreCard />
+                <ProductListPage />
+              </>
+            }
+          />
+          <Route path="/help" element={<HelpPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/products/:id" element={<ProductDetailPage />} />
-          <Route path="/cart" element={<RequireAuth><CartPage /></RequireAuth>} />
-          <Route path="/checkout" element={<RequireAuth><CheckoutPage /></RequireAuth>} />
-          <Route path="/orders" element={<RequireAuth><OrdersPage /></RequireAuth>} />
-          <Route path="/orders/:id" element={<RequireAuth><OrderDetailPage /></RequireAuth>} />
-          <Route path="/orders/:id/pay" element={<RequireAuth><PayPage /></RequireAuth>} />
-          <Route path="/account/addresses" element={<RequireAuth><AddressBookPage /></RequireAuth>} />
-          <Route path="/account" element={<RequireAuth><AccountPage /></RequireAuth>} />
+          <Route path="/cart" element={<CartPage />} />
+          <Route
+            path="/checkout"
+            element={
+              <RequireAuth>
+                <CheckoutPage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/orders"
+            element={
+              <RequireAuth>
+                <OrdersPage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/orders/:id"
+            element={
+              <RequireAuth>
+                <OrderDetailPage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/orders/:id/pay"
+            element={
+              <RequireAuth>
+                <PayPage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/account/favorites"
+            element={
+              <RequireAuth>
+                <FavoritesPage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/account/history"
+            element={
+              <RequireAuth>
+                <HistoryPage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/account/coupons"
+            element={
+              <RequireAuth>
+                <CouponsPage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/account/addresses"
+            element={
+              <RequireAuth>
+                <AddressBookPage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/account"
+            element={
+              <RequireAuth>
+                <AccountPage />
+              </RequireAuth>
+            }
+          />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
-          <Route path="/staff/orders" element={<RequireAuth staff><StaffOrdersPage /></RequireAuth>} />
-          <Route path="/staff/products" element={<RequireAuth staff><StaffProductsPage /></RequireAuth>} />
-          <Route path="/staff/products/new" element={<RequireAuth staff><StaffEditPage /></RequireAuth>} />
-          <Route path="/staff/products/:id" element={<RequireAuth staff><StaffEditPage /></RequireAuth>} />
+          <Route
+            path="/staff/after-sales"
+            element={
+              <RequireAuth staff>
+                <StaffAfterSalesPage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/staff/products/:id/variants"
+            element={
+              <RequireAuth staff>
+                <VariantsPage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/staff/orders"
+            element={
+              <RequireAuth staff>
+                <StaffOrdersPage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/staff/products"
+            element={
+              <RequireAuth staff>
+                <StaffProductsPage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/staff/products/new"
+            element={
+              <RequireAuth staff>
+                <StaffEditPage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/staff/products/:id"
+            element={
+              <RequireAuth staff>
+                <StaffEditPage />
+              </RequireAuth>
+            }
+          />
           <Route
             path="*"
             element={
@@ -276,7 +499,16 @@ export default function App() {
           />
         </Routes>
       </main>
-      <footer className="mx-auto hidden w-full max-w-7xl border-t px-4 pt-5 pb-10 text-xs text-muted-foreground sm:block sm:px-6">Sample Shop · vibe-backend 示範前端</footer>
+      <footer className="mx-auto w-full max-w-7xl border-t px-4 pt-5 pb-24 text-xs text-muted-foreground sm:pb-10 sm:px-6">
+        Sample Shop · vibe-backend 示範前端 ·{' '}
+        <Link to="/help" className="underline">
+          幫助中心
+        </Link>{' '}
+        ·{' '}
+        <a href="mailto:support@example.com" className="underline">
+          聯絡賣家（示範）：support@example.com
+        </a>
+      </footer>
       <BottomTabs cartCount={cartCount} signedIn={!!me} />
     </div>
   );

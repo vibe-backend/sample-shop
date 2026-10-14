@@ -1,3 +1,5 @@
+import type { CheckoutTotals, OrderQuery, ShippingMethod, ShopFeatures } from './features';
+export * from './features';
 // Types mirroring the agreed sample-shop API contract.
 // Timestamps are ISO 8601 UTC strings; money is integer minor units (*_cents).
 
@@ -60,6 +62,15 @@ export interface Product {
   created_at: string;
   /** Optional display field (「已售 N」); hidden when absent, e.g. real mode until the contract adds it. */
   sold_count?: number;
+  rating_avg?: number;
+  review_count?: number;
+  brand?: string;
+  subcategory?: string;
+  attributes?: Record<string, string>;
+  compare_at_price_cents?: number;
+  return_days?: number;
+  reserved_stock?: number;
+  campaign?: { starts_at: string; ends_at: string; price_cents: number; limit: number; sold: number };
   /**
    * Contract addition (#17): spec groups, e.g. [{ name: '顏色', values: ['黑色', '米白'] }].
    * Absent/empty → product has no variants. When present, price_cents is the lowest SKU price
@@ -79,6 +90,9 @@ export interface ProductOption {
 }
 
 export interface ProductVariant {
+  active?: boolean;
+  version?: number;
+  reserved_stock?: number;
   /** sku_id */
   id: string;
   options: SkuOptions;
@@ -93,11 +107,15 @@ export interface Page<T> {
   next_cursor: string | null;
 }
 
-export type ProductSort = 'price_asc' | 'price_desc' | 'created_at_asc' | 'created_at_desc';
+export type ProductSort =
+  'price_asc' | 'price_desc' | 'created_at_asc' | 'created_at_desc' | 'sales_desc' | 'rating_desc' | 'relevance_desc';
 
 export interface ProductQuery {
   q?: string;
   category?: string;
+  brands?: string[];
+  subcategory?: string;
+  attributes?: Record<string, string[]>;
   min_price_cents?: number;
   max_price_cents?: number;
   sort?: ProductSort;
@@ -106,7 +124,10 @@ export interface ProductQuery {
 }
 
 /** CONTRACT.md §3 @a3d4304: `sold_count` is server-maintained and never part of the input. */
-export type ProductInput = Omit<Product, 'id' | 'in_stock' | 'created_at' | 'sold_count'>;
+export type ProductInput = Omit<
+  Product,
+  'id' | 'in_stock' | 'created_at' | 'sold_count' | 'rating_avg' | 'review_count' | 'reserved_stock'
+>;
 
 export interface ProductSummary {
   id: string;
@@ -131,6 +152,10 @@ export interface CartItem {
   sku?: SkuRef | null;
   quantity: number;
   line_total_cents: number;
+  stock?: number;
+  unavailable?: boolean;
+  original_price_cents?: number;
+  price_changed?: boolean;
 }
 
 export interface Cart {
@@ -202,7 +227,17 @@ export interface PaymentInput {
   simulate: 'success' | 'failure';
 }
 
-export interface Order {
+export interface Order extends Partial<CheckoutTotals> {
+  shipping_method?: ShippingMethod;
+  note?: string;
+  cancellation_reason?: string;
+  reservation_expires_at?: string;
+  reservation_active?: boolean;
+  hidden?: boolean;
+  refunded_cents?: number;
+  points_earned?: number;
+  points_used?: number;
+  shipment?: { carrier: string; tracking_number: string; events: { at: string; description: string }[] };
   id: string;
   status: OrderStatus;
   /** §13 @a3d4304: always present; null until paid. */
@@ -222,9 +257,15 @@ export interface Order {
 /** POST /shop/v1/orders body — §2 #14 / §12 @a3d4304: `address_id` required (422 ADDRESS_REQUIRED, 404 ADDRESS_NOT_FOUND). */
 export interface CreateOrderInput {
   address_id: string;
+  item_ids?: string[];
+  buy_now?: { product_id: string; sku_id?: string | null; quantity: number };
+  shipping_method?: ShippingMethod;
+  coupon_id?: string;
+  points?: number;
+  note?: string;
 }
 
-export interface ShopApi {
+export interface ShopApi extends ShopFeatures {
   login(c: Credentials): Promise<AuthToken>;
   register(r: RegisterInput): Promise<AuthToken>;
   me(): Promise<Me>;
@@ -241,7 +282,7 @@ export interface ShopApi {
    * body replays the original order; same key + different body → 409 IDEMPOTENCY_KEY_REUSED.
    */
   createOrder(idempotencyKey: string, body: CreateOrderInput): Promise<Order>;
-  listOrders(cursor?: string): Promise<Page<Order>>;
+  listOrders(cursor?: string, query?: OrderQuery): Promise<Page<Order>>;
   getOrder(id: string): Promise<Order>;
   /**
    * §13 @a3d4304: simulated payment for a pending order. Success → 200 `paid`; failure → 402
@@ -251,7 +292,7 @@ export interface ShopApi {
   /** §2 #17 / §12 @a3d4304: GET /shop/v1/addresses → Address[] (not paged), default first, then newest first. */
   listAddresses(): Promise<Address[]>;
   /** #34: buyer cancels a pending/paid order (stock restored). 409 INVALID_TRANSITION otherwise. */
-  cancelOrder(orderId: string): Promise<Order>;
+  cancelOrder(orderId: string, reason?: string): Promise<Order>;
   /** #34: buyer confirms receipt of a shipped order → delivered. 409 INVALID_TRANSITION otherwise. */
   confirmDelivery(orderId: string): Promise<Order>;
   /** #34: staff — all orders, newest first, optional status filter. */

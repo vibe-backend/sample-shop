@@ -5,7 +5,14 @@ import { ErrorNote } from './ui-helpers';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -26,8 +33,20 @@ export function AddressLines({ a }: { a: AddressSnapshot }) {
 }
 
 /** Selectable list of saved addresses (role=radiogroup). */
-export function AddressPicker({ addresses, value, onChange }: { addresses: Address[]; value: string | null; onChange: (id: string) => void }) {
-  const roving = rovingRadio(addresses.map((a) => a.id), value, onChange);
+export function AddressPicker({
+  addresses,
+  value,
+  onChange,
+}: {
+  addresses: Address[];
+  value: string | null;
+  onChange: (id: string) => void;
+}) {
+  const roving = rovingRadio(
+    addresses.map((a) => a.id),
+    value,
+    onChange,
+  );
   return (
     <div role="radiogroup" aria-label="收貨地址" className="grid gap-2" onKeyDown={roving.onKeyDown}>
       {addresses.map((a, i) => {
@@ -45,7 +64,10 @@ export function AddressPicker({ addresses, value, onChange }: { addresses: Addre
               on ? 'border-primary bg-primary/5' : 'hover:bg-muted/60',
             )}
           >
-            <MapPin className={cn('mt-0.5 size-4 shrink-0', on ? 'text-primary' : 'text-muted-foreground')} aria-hidden="true" />
+            <MapPin
+              className={cn('mt-0.5 size-4 shrink-0', on ? 'text-primary' : 'text-muted-foreground')}
+              aria-hidden="true"
+            />
             <div className="flex-1">
               <AddressLines a={a} />
             </div>
@@ -58,7 +80,13 @@ export function AddressPicker({ addresses, value, onChange }: { addresses: Addre
 }
 
 const BLANK: AddressInput = { recipient: '', phone: '', region: '', line1: '', is_default: false };
-const fromAddress = (a: Address): AddressInput => ({ recipient: a.recipient, phone: a.phone, region: a.region, line1: a.line1, is_default: a.is_default });
+const fromAddress = (a: Address): AddressInput => ({
+  recipient: a.recipient,
+  phone: a.phone,
+  region: a.region,
+  line1: a.line1,
+  is_default: a.is_default,
+});
 
 /** Add-address dialog; validates client-side with the same rules as the mock server. */
 export function AddressDialog({
@@ -96,7 +124,9 @@ export function AddressDialog({
     setBusy(true);
     setError(null);
     try {
-      const a = editing ? await api.updateAddress(editing.id, f) : await api.createAddress({ ...f, is_default: forceDefault || f.is_default });
+      const a = editing
+        ? await api.updateAddress(editing.id, f)
+        : await api.createAddress({ ...f, is_default: forceDefault || f.is_default });
       onCreated(a);
       if (!editing) setF({ ...BLANK, recipient: defaultName });
       onOpenChange(false);
@@ -107,7 +137,10 @@ export function AddressDialog({
     }
   }
 
-  const field = (k: keyof AddressErrors) => ({ 'aria-invalid': !!errors[k] || undefined, 'aria-describedby': errors[k] ? `addr-${k}-err` : undefined });
+  const field = (k: keyof AddressErrors) => ({
+    'aria-invalid': !!errors[k] || undefined,
+    'aria-describedby': errors[k] ? `addr-${k}-err` : undefined,
+  });
   const Err = ({ k }: { k: keyof AddressErrors }) =>
     errors[k] ? (
       <p id={`addr-${k}-err`} className="text-xs text-destructive">
@@ -126,12 +159,29 @@ export function AddressDialog({
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="grid gap-1.5">
               <Label htmlFor="addr-recipient">收件人</Label>
-              <Input id="addr-recipient" className="h-10" autoComplete="name" value={f.recipient} onChange={(e) => setF({ ...f, recipient: e.target.value })} {...field('recipient')} />
+              <Input
+                id="addr-recipient"
+                className="h-10"
+                autoComplete="name"
+                value={f.recipient}
+                onChange={(e) => setF({ ...f, recipient: e.target.value })}
+                {...field('recipient')}
+              />
               <Err k="recipient" />
             </div>
             <div className="grid gap-1.5">
               <Label htmlFor="addr-phone">電話</Label>
-              <Input id="addr-phone" className="h-10" type="tel" inputMode="tel" autoComplete="tel" placeholder="例如 9123 4567" value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} {...field('phone')} />
+              <Input
+                id="addr-phone"
+                className="h-10"
+                type="tel"
+                inputMode="tel"
+                autoComplete="tel"
+                placeholder="例如 9123 4567"
+                value={f.phone}
+                onChange={(e) => setF({ ...f, phone: e.target.value })}
+                {...field('phone')}
+              />
               <Err k="phone" />
             </div>
           </div>
@@ -153,10 +203,18 @@ export function AddressDialog({
           </div>
           <div className="grid gap-1.5">
             <Label htmlFor="addr-line1">詳細地址</Label>
-            <Input id="addr-line1" className="h-10" autoComplete="street-address" placeholder="街道、大廈、樓層及單位" value={f.line1} onChange={(e) => setF({ ...f, line1: e.target.value })} {...field('line1')} />
+            <Input
+              id="addr-line1"
+              className="h-10"
+              autoComplete="street-address"
+              placeholder="街道、大廈、樓層及單位"
+              value={f.line1}
+              onChange={(e) => setF({ ...f, line1: e.target.value })}
+              {...field('line1')}
+            />
             <Err k="line1" />
           </div>
-          {!forceDefault && (
+          {!forceDefault && !editing && (
             <label className="flex items-center gap-2 text-sm">
               <Checkbox checked={!!f.is_default} onCheckedChange={(c) => setF({ ...f, is_default: c === true })} />
               設為預設地址

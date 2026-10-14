@@ -8,7 +8,7 @@ export type Actor = 'buyer' | 'staff' | 'system';
  * `system` = payment gateway result.
  */
 export const TRANSITIONS: Record<OrderStatus, Partial<Record<OrderStatus, Actor[]>>> = {
-  pending: { paid: ['system'], cancelled: ['buyer', 'staff'] },
+  pending: { paid: ['system'], cancelled: ['buyer', 'staff', 'system'] },
   paid: { shipped: ['staff'], cancelled: ['buyer', 'staff'] },
   shipped: { delivered: ['buyer'] },
   delivered: {},

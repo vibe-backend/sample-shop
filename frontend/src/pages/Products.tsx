@@ -1,7 +1,21 @@
+import {
+  Gallery,
+  ProductImage,
+  FavoriteButton,
+  ShareButton,
+  StoreCard,
+  Discovery,
+  CategoryGrid,
+  ImageSearch,
+  Campaign,
+} from '../components/shopping';
+import { ProductCommunity } from '../components/community';
+import { CATEGORY_TREE, categorySlug } from '../lib/commerce';
+import { recordVisit } from '../lib/browsing';
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ChevronLeft, Pause, Play } from 'lucide-react';
-import { api, formatPrice, type Product, type ProductSort } from '../api';
+import { api, API_MODE, formatPrice, type Product, type ProductSort } from '../api';
 import { findVariant, hasVariants, isValueAvailable, missingOptions, priceRange, type Selection } from '@/lib/sku';
 import { cn } from '@/lib/utils';
 import { useAuth } from '../auth';
@@ -16,6 +30,9 @@ import { Skeleton } from '@/components/ui/skeleton';
 export const CATEGORIES = ['廚房', '配件', '文具', '家居', '電子', '食品'];
 
 const SORTS: [ProductSort, string][] = [
+  ['sales_desc', '銷量'],
+  ['rating_desc', '評分'],
+  ['relevance_desc', '綜合'],
   ['created_at_desc', '最新上架'],
   ['created_at_asc', '最早上架'],
   ['price_asc', '價格：低至高'],
@@ -28,7 +45,12 @@ const ALL = '__all';
 const toCents = (v: string | null) => (v && !Number.isNaN(Number(v)) ? Math.round(Number(v) * 100) : undefined);
 
 export function StockTag({ p }: { p: Pick<Product, 'in_stock' | 'stock' | 'active'> }) {
-  if (!p.active) return <Badge variant="outline" className="text-muted-foreground">已下架</Badge>;
+  if (!p.active)
+    return (
+      <Badge variant="outline" className="text-muted-foreground">
+        已下架
+      </Badge>
+    );
   if (!p.in_stock) return <Badge className="bg-warning/15 text-warning">已售完</Badge>;
   if (p.stock <= 5) return <Badge variant="secondary">剩 {p.stock} 件</Badge>;
   return null;
@@ -55,14 +77,36 @@ function GridSkeleton() {
 
 /** Our own generated banner art: gradient + emoji, no third-party images or marks. Stops keep white text ≥5.5:1. */
 const SLIDES = [
-  { title: '秋日家居節', sub: '香氛、燈具、毛毯 精選推介', emoji: '🕯️', from: '#c43c00', to: '#9e2f00' },
-  { title: '文具新學期', sub: '筆記本、鋼筆 一站買齊', emoji: '📓', from: '#c4002a', to: '#a33a00' },
-  { title: '咖啡生活', sub: '手沖入門組 新手必備', emoji: '☕', from: '#b34700', to: '#8f2a00' },
+  {
+    title: '秋日家居節',
+    sub: '香氛、燈具、毛毯 精選推介',
+    emoji: '🕯️',
+    link: '/category/home',
+    from: '#c43c00',
+    to: '#9e2f00',
+  },
+  {
+    title: '文具新學期',
+    sub: '筆記本、鋼筆 一站買齊',
+    emoji: '📓',
+    link: '/category/stationery',
+    from: '#c4002a',
+    to: '#a33a00',
+  },
+  {
+    title: '咖啡生活',
+    sub: '手沖入門組 新手必備',
+    emoji: '☕',
+    link: '/category/kitchen',
+    from: '#b34700',
+    to: '#8f2a00',
+  },
 ];
 
 export function Carousel() {
   const [i, setI] = useState(0);
-  const reduced = typeof globalThis.matchMedia === 'function' && globalThis.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const reduced =
+    typeof globalThis.matchMedia === 'function' && globalThis.matchMedia('(prefers-reduced-motion: reduce)').matches;
   // WCAG 2.2.2: user pause, plus automatic pause while hovered or focused.
   const [paused, setPaused] = useState(reduced);
   const [hover, setHover] = useState(false);
@@ -86,6 +130,10 @@ export function Carousel() {
       onBlur={(e) => !e.currentTarget.contains(e.relatedTarget as Node | null) && setFocus(false)}
     >
       <div
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowLeft') setI((i) => (i + SLIDES.length - 1) % SLIDES.length);
+          if (e.key === 'ArrowRight') setI((i) => (i + 1) % SLIDES.length);
+        }}
         key={i}
         aria-live={rotating ? 'off' : 'polite'}
         aria-roledescription="slide"
@@ -94,7 +142,9 @@ export function Carousel() {
         style={{ background: `linear-gradient(120deg, ${sl.from}, ${sl.to})` }}
       >
         <div>
-          <p className="text-2xl font-bold sm:text-4xl">{sl.title}</p>
+          <Link to={sl.link} className="text-2xl font-bold hover:underline sm:text-4xl">
+            {sl.title}
+          </Link>
           <p className="mt-1 text-sm sm:text-lg">{sl.sub}</p>
         </div>
         <span className="text-6xl sm:text-8xl" aria-hidden="true">
@@ -102,12 +152,30 @@ export function Carousel() {
         </span>
       </div>
       <div className="absolute inset-x-0 bottom-1 flex items-center justify-center gap-0.5">
-        <button type="button" onClick={() => setPaused((p) => !p)} aria-label={paused ? '播放輪播' : '暫停輪播'} className="grid size-6 place-items-center rounded-full text-white hover:bg-white/20 focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none">
-          {paused ? <Play className="size-3.5" aria-hidden="true" /> : <Pause className="size-3.5" aria-hidden="true" />}
+        <button
+          type="button"
+          onClick={() => setPaused((p) => !p)}
+          aria-label={paused ? '播放輪播' : '暫停輪播'}
+          className="grid size-6 place-items-center rounded-full text-white hover:bg-white/20 focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none"
+        >
+          {paused ? (
+            <Play className="size-3.5" aria-hidden="true" />
+          ) : (
+            <Pause className="size-3.5" aria-hidden="true" />
+          )}
         </button>
         {SLIDES.map((x, j) => (
-          <button key={x.title} type="button" aria-label={`第 ${j + 1} 張`} aria-current={j === i} onClick={() => setI(j)} className="grid h-6 min-w-6 place-items-center rounded-full focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none">
-            <span className={cn('block h-1.5 rounded-full bg-white/70 transition-all', j === i ? 'w-5 bg-white' : 'w-1.5')} />
+          <button
+            key={x.title}
+            type="button"
+            aria-label={`第 ${j + 1} 張`}
+            aria-current={j === i}
+            onClick={() => setI(j)}
+            className="grid h-6 min-w-6 place-items-center rounded-full focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none"
+          >
+            <span
+              className={cn('block h-1.5 rounded-full bg-white/70 transition-all', j === i ? 'w-5 bg-white' : 'w-1.5')}
+            />
           </button>
         ))}
       </div>
@@ -129,26 +197,44 @@ export function Price({ p, className }: { p: Product; className?: string }) {
 
 export function ProductCard({ p }: { p: Product }) {
   return (
-    <Link to={`/products/${p.id}`} className="group block h-full overflow-hidden rounded-lg bg-card ring-1 ring-transparent transition hover:ring-primary focus-visible:ring-3 focus-visible:ring-ring focus-visible:outline-none">
-      <div className="aspect-square bg-muted">
-        <img src={p.image_urls[0]} alt="" loading="lazy" className="size-full object-cover" />
-      </div>
-      <div className="space-y-1 p-2.5">
-        <h2 className="line-clamp-2 min-h-10 text-sm leading-5">{p.name}</h2>
-        <div className="flex flex-wrap items-baseline justify-between gap-x-1">
-          <Price p={p} />
-          {p.sold_count !== undefined && <span className="text-xs text-muted-foreground">已售 {p.sold_count}</span>}
+    <div className="relative">
+      <Link
+        to={`/products/${p.id}`}
+        className="group block h-full overflow-hidden rounded-lg bg-card ring-1 ring-transparent transition hover:ring-primary focus-visible:ring-3 focus-visible:ring-ring focus-visible:outline-none"
+      >
+        <div className="aspect-square bg-muted">
+          <ProductImage src={p.image_urls[0]} alt="" loading="lazy" className="size-full object-cover" />
         </div>
-        <StockTag p={p} />
+        <div className="space-y-1 p-2.5">
+          <h2 className="line-clamp-2 min-h-10 text-sm leading-5">{p.name}</h2>
+          <div className="flex flex-wrap items-baseline justify-between gap-x-1">
+            <Price p={p} />
+            {p.sold_count !== undefined && <span className="text-xs text-muted-foreground">已售 {p.sold_count}</span>}
+          </div>
+          {p.compare_at_price_cents && p.compare_at_price_cents > p.price_cents && (
+            <del className="text-xs text-muted-foreground">{formatPrice(p.compare_at_price_cents)}</del>
+          )}
+          <StockTag p={p} />
+        </div>
+      </Link>
+      <div className="absolute top-2 right-2">
+        <FavoriteButton productId={p.id} />
       </div>
-    </Link>
+    </div>
   );
 }
 
 export function ProductListPage() {
+  const { slug } = useParams();
+  const nav = useNavigate();
+  const routeCategory = slug ? CATEGORY_TREE.find((c) => c.slug === slug) : null;
   const [params, setParams] = useSearchParams();
   const q = params.get('q') ?? '';
-  const category = params.get('category') ?? '';
+  const category = routeCategory?.name ?? params.get('category') ?? '';
+  const brands = params.getAll('brand');
+  const subcategory = params.get('subcategory') ?? '';
+  const origins = params.getAll('origin');
+  const features = params.getAll('feature');
   const min = params.get('min') ?? '';
   const max = params.get('max') ?? '';
   const sort = (params.get('sort') as ProductSort) || 'created_at_desc';
@@ -159,7 +245,16 @@ export function ProductListPage() {
   const [more, setMore] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
-  const query = { q: q || undefined, category: category || undefined, min_price_cents: toCents(min), max_price_cents: toCents(max), sort };
+  const query = {
+    brands: brands.length ? brands : undefined,
+    subcategory: subcategory || undefined,
+    attributes: origins.length || features.length ? { 產地: origins, 特色: features } : undefined,
+    q: q || undefined,
+    category: category || undefined,
+    min_price_cents: toCents(min),
+    max_price_cents: toCents(max),
+    sort,
+  };
   const key = JSON.stringify(query);
 
   useEffect(() => {
@@ -194,16 +289,34 @@ export function ProductListPage() {
   }
 
   function set(k: string, v: string) {
+    if (slug && k === 'category') return nav(v ? `/category/${categorySlug(v)}` : '/');
     const n = new URLSearchParams(params);
     if (v) n.set(k, v);
     else n.delete(k);
     setParams(n, { replace: true });
   }
 
-  const catClass = (on: boolean) => cn('rounded-md px-3 py-2 text-left text-sm transition-colors', on ? 'bg-secondary font-medium text-primary' : 'hover:bg-muted');
+  if (slug && !routeCategory)
+    return (
+      <section>
+        <h1 className="text-3xl font-bold">找不到分類（404）</h1>
+        <Link to="/">返回首頁</Link>
+      </section>
+    );
+  const catClass = (on: boolean) =>
+    cn(
+      'rounded-md px-3 py-2 text-left text-sm transition-colors',
+      on ? 'bg-secondary font-medium text-primary' : 'hover:bg-muted',
+    );
 
   return (
     <>
+      {routeCategory && (
+        <nav className="mb-3 text-sm" aria-label="麵包屑">
+          <Link to="/">首頁</Link> &gt; {routeCategory.name}
+        </nav>
+      )}
+      <CategoryGrid selected={category} onSelect={(c) => set('category', c)} />
       <section className="mb-4 grid gap-3 sm:grid-cols-[180px_1fr]">
         <nav aria-label="商品分類" className="hidden flex-col gap-0.5 rounded-xl bg-card p-2 sm:flex">
           <span className="px-3 pt-1 pb-2 text-xs font-medium text-muted-foreground">商品分類</span>
@@ -211,7 +324,13 @@ export function ProductListPage() {
             全部分類
           </button>
           {CATEGORIES.map((c) => (
-            <button key={c} type="button" className={catClass(category === c)} aria-current={category === c || undefined} onClick={() => set('category', c)}>
+            <button
+              key={c}
+              type="button"
+              className={catClass(category === c)}
+              aria-current={category === c || undefined}
+              onClick={() => set('category', c)}
+            >
               {c}
             </button>
           ))}
@@ -219,7 +338,15 @@ export function ProductListPage() {
         <Carousel />
         <div className="-mx-3 flex gap-2 overflow-x-auto px-3 sm:hidden" aria-label="商品分類（手機）">
           {['', ...CATEGORIES].map((c) => (
-            <button key={c || ALL} type="button" onClick={() => set('category', c)} className={cn('shrink-0 rounded-full px-3 py-1 text-sm', category === c ? 'bg-primary text-primary-foreground' : 'bg-card')}>
+            <button
+              key={c || ALL}
+              type="button"
+              onClick={() => set('category', c)}
+              className={cn(
+                'shrink-0 rounded-full px-3 py-1 text-sm',
+                category === c ? 'bg-primary text-primary-foreground' : 'bg-card',
+              )}
+            >
               {c || '全部'}
             </button>
           ))}
@@ -227,16 +354,34 @@ export function ProductListPage() {
       </section>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-lg font-bold">
-          精選好物
+          {routeCategory?.name ?? '精選好物'}
           {q && <span className="ml-2 text-sm font-normal text-muted-foreground">「{q}」的搜尋結果</span>}
         </h1>
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-1">
-            <Input type="number" min="0" inputMode="decimal" placeholder="最低價" aria-label="最低價（HK$）" className="h-8 w-20 bg-card" value={min} onChange={(e) => set('min', e.target.value)} />
+            <Input
+              type="number"
+              min="0"
+              inputMode="decimal"
+              placeholder="最低價"
+              aria-label="最低價（HK$）"
+              className="h-8 w-20 bg-card"
+              value={min}
+              onChange={(e) => set('min', e.target.value)}
+            />
             <span className="text-muted-foreground" aria-hidden="true">
               –
             </span>
-            <Input type="number" min="0" inputMode="decimal" placeholder="最高價" aria-label="最高價（HK$）" className="h-8 w-20 bg-card" value={max} onChange={(e) => set('max', e.target.value)} />
+            <Input
+              type="number"
+              min="0"
+              inputMode="decimal"
+              placeholder="最高價"
+              aria-label="最高價（HK$）"
+              className="h-8 w-20 bg-card"
+              value={max}
+              onChange={(e) => set('max', e.target.value)}
+            />
           </div>
           <Select value={sort} onValueChange={(v) => set('sort', v)}>
             <SelectTrigger aria-label="排序" className="h-8! w-32 bg-card">
@@ -252,6 +397,75 @@ export function ProductListPage() {
           </Select>
         </div>
       </div>
+      <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl bg-card p-3 text-sm">
+        <label>
+          子分類
+          <select
+            aria-label="子分類"
+            className="ml-2 rounded border bg-card p-1"
+            value={subcategory}
+            onChange={(e) => set('subcategory', e.target.value)}
+          >
+            <option value="">全部</option>
+            {CATEGORY_TREE.filter((c) => !category || c.name === category)
+              .flatMap((c) => c.children)
+              .map((name) => (
+                <option key={name}>{name}</option>
+              ))}
+          </select>
+        </label>
+        {['Sample Select', '生活工房'].map((brand) => (
+          <label key={brand}>
+            <input
+              type="checkbox"
+              checked={brands.includes(brand)}
+              onChange={(e) => {
+                const n = new URLSearchParams(params);
+                n.delete('brand');
+                for (const b of e.target.checked ? [...brands, brand] : brands.filter((b) => b !== brand))
+                  n.append('brand', b);
+                setParams(n);
+              }}
+            />{' '}
+            {brand}
+          </label>
+        ))}
+        {(
+          [
+            ['origin', '產地', ['香港', '台灣']],
+            ['feature', '特色', ['日常', '手作']],
+          ] as const
+        ).map(([key, label, values]) => (
+          <span key={key}>
+            {label}：
+            {values.map((v) => (
+              <label key={v} className="mr-2">
+                <input
+                  type="checkbox"
+                  checked={params.getAll(key).includes(v)}
+                  onChange={(e) => {
+                    const n = new URLSearchParams(params);
+                    const selected = n.getAll(key).filter((x) => x !== v);
+                    n.delete(key);
+                    for (const x of e.target.checked ? [...selected, v] : selected) n.append(key, x);
+                    setParams(n);
+                  }}
+                />
+                {v}
+              </label>
+            ))}
+          </span>
+        ))}
+        <Button variant="link" size="sm" onClick={() => setParams({})}>
+          清除所有篩選
+        </Button>
+        <ImageSearch />
+      </div>
+      {params.get('image_search') && (
+        <p role="status" className="mb-3 rounded-lg bg-muted p-3 text-sm">
+          以圖搜圖：示範模擬結果（按檔案資料選擇分類，沒有分析圖片內容）。
+        </p>
+      )}
       <ErrorNote error={error} />
       {loading ? (
         <GridSkeleton />
@@ -280,6 +494,7 @@ export function ProductListPage() {
           )}
         </>
       )}
+      <Discovery renderProduct={(p) => <ProductCard p={p} />} />
     </>
   );
 }
@@ -295,7 +510,15 @@ export function BackLink({ to, children }: { to: string; children: string }) {
 }
 
 /** Taobao-style spec picker: one toggle-button group per spec; unbuyable values are disabled. */
-export function SkuSelector({ product, selection, onChange }: { product: Product; selection: Selection; onChange: (s: Selection) => void }) {
+export function SkuSelector({
+  product,
+  selection,
+  onChange,
+}: {
+  product: Product;
+  selection: Selection;
+  onChange: (s: Selection) => void;
+}) {
   return (
     <div className="space-y-3">
       {product.options!.map((o) => (
@@ -333,7 +556,15 @@ export function ProductDetailPage() {
   const { id = '' } = useParams();
   const { me, refreshCart } = useAuth();
   const nav = useNavigate();
-  const [p, error, loading] = useAsync(() => api.getProduct(id), [id]);
+  const [p, error, loading, reload] = useAsync(() => api.getProduct(id), [id]);
+  useEffect(() => {
+    if (p?.active) recordVisit(p.id);
+  }, [p?.id, p?.active]);
+  useEffect(() => {
+    if (!p?.campaign) return;
+    const timer = setInterval(reload, 1000);
+    return () => clearInterval(timer);
+  }, [p?.campaign, reload]);
   const [qty, setQty] = useState(1);
   const [sel, setSel] = useState<Selection>({});
   const [busy, setBusy] = useState(false);
@@ -348,10 +579,13 @@ export function ProductDetailPage() {
   const sku = multi ? findVariant(p, sel) : null;
   const missing = multi ? missingOptions(p, sel) : [];
   const [lo, hi] = priceRange(p);
-  const price = sku ? formatPrice(sku.price_cents, p.currency) : lo === hi ? formatPrice(lo, p.currency) : `${formatPrice(lo, p.currency)} – ${formatPrice(hi, p.currency)}`;
+  const price = sku
+    ? formatPrice(sku.price_cents, p.currency)
+    : lo === hi
+      ? formatPrice(lo, p.currency)
+      : `${formatPrice(lo, p.currency)} – ${formatPrice(hi, p.currency)}`;
   const stock = sku ? sku.stock : p.stock;
   const inStock = sku ? sku.in_stock : p.in_stock;
-  const image = sku?.image_url || p.image_urls[0];
 
   function pick(next: Selection) {
     setSel(next);
@@ -364,15 +598,22 @@ export function ProductDetailPage() {
       setHint(`請選擇${missing.join('、')}`);
       return;
     }
-    if (!me) return nav(`/login?next=${encodeURIComponent(`/products/${id}`)}`);
+    if (buyNow && API_MODE === 'real') {
+      setHint('立即購買目前只支援示範模式');
+      return;
+    }
+    if (buyNow) {
+      const query = new URLSearchParams({ buy: p!.id, qty: String(qty) });
+      if (sku) query.set('sku', sku.id);
+      const next = `/checkout?${query}`;
+      return nav(me ? next : `/login?next=${encodeURIComponent(next)}`);
+    }
     setBusy(true);
     setAddErr(null);
     setMsg('');
     try {
       await api.addCartItem(p!.id, qty, sku?.id ?? null);
       refreshCart();
-      // 立即購買: same add-to-cart, then straight to checkout.
-      if (buyNow) return nav('/checkout');
       setMsg('已加入購物車');
     } catch (e) {
       setAddErr(e);
@@ -385,12 +626,15 @@ export function ProductDetailPage() {
     <article>
       <BackLink to="/">返回商品</BackLink>
       <div className="grid items-start gap-6 md:grid-cols-[1.1fr_1fr] md:gap-12">
-        <div className="overflow-hidden rounded-3xl bg-muted">
-          <img src={image} alt={p.name} className="w-full" />
-        </div>
+        <Gallery product={p} skuImage={sku?.image_url} />
         <div className="space-y-4">
           <div>
-            <span className="text-sm text-muted-foreground">{p.category}</span>
+            <Link
+              to={`/category/${categorySlug(p.category)}`}
+              className="text-sm text-muted-foreground hover:underline"
+            >
+              {p.category}
+            </Link>
             <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">{p.name}</h1>
           </div>
           <div className="flex items-baseline justify-between gap-3 rounded-lg bg-secondary/70 px-4 py-3">
@@ -400,9 +644,28 @@ export function ProductDetailPage() {
             {p.sold_count !== undefined && <span className="text-sm text-muted-foreground">已售 {p.sold_count}</span>}
           </div>
           <p className="text-muted-foreground">{p.description}</p>
+          {p.compare_at_price_cents && p.compare_at_price_cents > p.price_cents && (
+            <p className="text-sm text-muted-foreground">
+              <del>{formatPrice(p.compare_at_price_cents)}</del> 原價
+            </p>
+          )}
+          <Campaign p={p} />
+          <p className="text-sm">
+            示範配送：香港發貨 · 快遞 HK$30，滿 HK$300 免運；門市自提免費。
+            {inStock && <span>預計 1–2 個工作天發貨。</span>}
+          </p>
+          {!!p.return_days && <Badge variant="secondary">{p.return_days} 天無理由退貨</Badge>}
+          <div className="flex gap-2">
+            <FavoriteButton productId={p.id} />
+            <ShareButton p={p} />
+          </div>
           {multi && <SkuSelector product={p} selection={sel} onChange={pick} />}
           <p className="flex items-center gap-2 text-sm" data-testid="stock" aria-live="polite">
-            {!inStock ? '目前缺貨' : multi && !sku ? `請選擇${missing.join('、')}（共 ${stock} 件）` : `庫存 ${stock} 件`}{' '}
+            {!inStock
+              ? '目前缺貨'
+              : multi && !sku
+                ? `請選擇${missing.join('、')}（共 ${stock} 件）`
+                : `庫存 ${stock} 件`}{' '}
             <StockTag p={{ active: p.active, in_stock: inStock, stock }} />
           </p>
           <div className="flex items-end gap-3 pt-2">
@@ -410,14 +673,32 @@ export function ProductDetailPage() {
               <Label htmlFor="qty" className="text-xs text-muted-foreground">
                 數量
               </Label>
-              <Input id="qty" type="number" min={1} max={99} className="h-10 w-20" value={qty} onChange={(e) => setQty(Math.max(1, Math.min(99, Number(e.target.value) || 1)))} />
+              <Input
+                id="qty"
+                type="number"
+                min={1}
+                max={99}
+                className="h-10 w-20"
+                value={qty}
+                onChange={(e) => setQty(Math.max(1, Math.min(99, Number(e.target.value) || 1)))}
+              />
             </div>
           </div>
           <div className="flex gap-0 overflow-hidden rounded-full sm:max-w-md">
-            <Button size="lg" className="tb-btn-cart h-11 text-[#3d1f00] flex-1 rounded-none text-base hover:brightness-95" onClick={() => add()} disabled={busy || !inStock || !p.active}>
+            <Button
+              size="lg"
+              className="tb-btn-cart h-11 text-[#3d1f00] flex-1 rounded-none text-base hover:brightness-95"
+              onClick={() => add()}
+              disabled={busy || !inStock || !p.active}
+            >
               {busy ? '處理中…' : inStock ? '加入購物車' : '已售完'}
             </Button>
-            <Button size="lg" className="tb-btn-buy h-11 text-white flex-1 rounded-none text-base hover:brightness-95" onClick={() => add(true)} disabled={busy || !inStock || !p.active}>
+            <Button
+              size="lg"
+              className="tb-btn-buy h-11 text-white flex-1 rounded-none text-base hover:brightness-95"
+              onClick={() => add(true)}
+              disabled={busy || !inStock || !p.active}
+            >
               立即購買
             </Button>
           </div>
@@ -437,6 +718,8 @@ export function ProductDetailPage() {
           <ErrorNote error={addErr} />
         </div>
       </div>
+      <StoreCard />
+      <ProductCommunity product={p} />
     </article>
   );
 }
