@@ -111,6 +111,10 @@ export function createRealApi(baseUrl: string, slug: string): ShopApi {
     // §2 #17/#18, §12 @a3d4304
     listAddresses: () => req<Address[]>('GET', '/shop/v1/addresses'),
     createAddress: (a) => req<Address>('POST', '/shop/v1/addresses', a),
+    // §12 @a3d4304 lists these as planned (#44); routes follow it, unverified against a backend.
+    updateAddress: (id, a) => req<Address>('PUT', `/shop/v1/addresses/${encodeURIComponent(id)}`, a),
+    deleteAddress: (id) => req<void>('DELETE', `/shop/v1/addresses/${encodeURIComponent(id)}`),
+    setDefaultAddress: (id) => req<Address>('POST', `/shop/v1/addresses/${encodeURIComponent(id)}/default`, {}),
     createProduct: (p: ProductInput) => req<Product>('POST', cat, p),
     updateProduct: (id, p) => req<Product>('PUT', `${cat}/${encodeURIComponent(id)}`, p),
     deleteProduct: (id) => req<void>('DELETE', `${cat}/${encodeURIComponent(id)}`),

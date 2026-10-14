@@ -95,3 +95,17 @@ describe('real adapter order status endpoints (#34, proposed — not yet in CONT
     expect(JSON.parse(fetch.mock.calls[2][1].body)).toEqual({ status: 'shipped' });
   });
 });
+
+describe('real adapter address book (#44, §12 @a3d4304 planned routes, unverified)', () => {
+  it('uses PUT / DELETE / POST …/default', async () => {
+    const fetch = vi.fn().mockImplementation(async (_u: string, i: { method: string }) => (i.method === 'DELETE' ? new Response(null, { status: 204 }) : json(200, { id: 'a1' })));
+    vi.stubGlobal('fetch', fetch);
+    const r = createRealApi('http://x', 'main');
+    const input = { recipient: 'a', phone: '91234567', region: '九龍', line1: '旺角彌敦道 1 號' };
+    await r.updateAddress('a1', input);
+    await expect(r.deleteAddress('a1')).resolves.toBeUndefined();
+    await r.setDefaultAddress('a1');
+    expect(fetch.mock.calls.map(([u, i]) => `${i.method} ${String(u).replace('http://x', '')}`)).toEqual(['PUT /shop/v1/addresses/a1', 'DELETE /shop/v1/addresses/a1', 'POST /shop/v1/addresses/a1/default']);
+    expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual(input);
+  });
+});

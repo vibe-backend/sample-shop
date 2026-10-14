@@ -58,11 +58,33 @@ export function AddressPicker({ addresses, value, onChange }: { addresses: Addre
 }
 
 const BLANK: AddressInput = { recipient: '', phone: '', region: '', line1: '', is_default: false };
+const fromAddress = (a: Address): AddressInput => ({ recipient: a.recipient, phone: a.phone, region: a.region, line1: a.line1, is_default: a.is_default });
 
 /** Add-address dialog; validates client-side with the same rules as the mock server. */
-export function AddressDialog({ open, onOpenChange, onCreated, defaultName = '', forceDefault = false }: { open: boolean; onOpenChange: (o: boolean) => void; onCreated: (a: Address) => void; defaultName?: string; forceDefault?: boolean }) {
-  const [f, setF] = useState<AddressInput>({ ...BLANK, recipient: defaultName });
+export function AddressDialog({
+  open,
+  onOpenChange,
+  onCreated,
+  defaultName = '',
+  forceDefault = false,
+  editing = null,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  onCreated: (a: Address) => void;
+  defaultName?: string;
+  forceDefault?: boolean;
+  /** Edit mode (#44): prefilled, saved with updateAddress; default is changed separately. */
+  editing?: Address | null;
+}) {
+  const [f, setF] = useState<AddressInput>(editing ? fromAddress(editing) : { ...BLANK, recipient: defaultName });
   const [errors, setErrors] = useState<AddressErrors>({});
+  const [seen, setSeen] = useState(editing);
+  if (editing !== seen) {
+    setSeen(editing);
+    setF(editing ? fromAddress(editing) : { ...BLANK, recipient: defaultName });
+    setErrors({});
+  }
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
@@ -74,9 +96,9 @@ export function AddressDialog({ open, onOpenChange, onCreated, defaultName = '',
     setBusy(true);
     setError(null);
     try {
-      const a = await api.createAddress({ ...f, is_default: forceDefault || f.is_default });
+      const a = editing ? await api.updateAddress(editing.id, f) : await api.createAddress({ ...f, is_default: forceDefault || f.is_default });
       onCreated(a);
-      setF({ ...BLANK, recipient: defaultName });
+      if (!editing) setF({ ...BLANK, recipient: defaultName });
       onOpenChange(false);
     } catch (err) {
       setError(err);
@@ -97,7 +119,7 @@ export function AddressDialog({ open, onOpenChange, onCreated, defaultName = '',
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>新增收貨地址</DialogTitle>
+          <DialogTitle>{editing ? '編輯收貨地址' : '新增收貨地址'}</DialogTitle>
           <DialogDescription>收件人、電話及地址均為必填。</DialogDescription>
         </DialogHeader>
         <form id="address-form" className="grid gap-3" onSubmit={submit} noValidate>

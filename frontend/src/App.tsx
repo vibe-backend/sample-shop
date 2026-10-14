@@ -1,3 +1,4 @@
+import { AddressBookPage } from './pages/Addresses';
 import { StaffOrdersPage } from './pages/StaffOrders';
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, NavLink, Route, Routes, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
@@ -95,6 +96,7 @@ function AccountPage() {
       </div>
       <nav className="grid divide-y rounded-xl bg-card" aria-label="帳戶">
         <Link to="/orders" className="px-4 py-3">我的訂單</Link>
+        <Link to="/account/addresses" className="px-4 py-3">收貨地址</Link>
         {isStaff && <Link to="/staff/products" className="px-4 py-3">商品管理</Link>}
         {isStaff && <Link to="/staff/orders" className="px-4 py-3">訂單管理</Link>}
         <button type="button" className="px-4 py-3 text-left text-destructive" onClick={() => { logout(); nav('/'); }}>
@@ -203,6 +205,7 @@ export default function App() {
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onSelect={() => nav('/orders')}>我的訂單</DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => nav('/account/addresses')}>收貨地址</DropdownMenuItem>
                   {isStaff && <DropdownMenuItem onSelect={() => nav('/staff/products')}>商品管理</DropdownMenuItem>}
                   {isStaff && <DropdownMenuItem onSelect={() => nav('/staff/orders')}>訂單管理</DropdownMenuItem>}
                   <DropdownMenuSeparator />
@@ -252,6 +255,7 @@ export default function App() {
           <Route path="/orders" element={<RequireAuth><OrdersPage /></RequireAuth>} />
           <Route path="/orders/:id" element={<RequireAuth><OrderDetailPage /></RequireAuth>} />
           <Route path="/orders/:id/pay" element={<RequireAuth><PayPage /></RequireAuth>} />
+          <Route path="/account/addresses" element={<RequireAuth><AddressBookPage /></RequireAuth>} />
           <Route path="/account" element={<RequireAuth><AccountPage /></RequireAuth>} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />

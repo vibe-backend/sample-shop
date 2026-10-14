@@ -142,6 +142,11 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
     (o.status_history ??= []).push({ status: to, at: new Date(now()).toISOString() });
     return o;
   }
+  function ownAddress(aid: string): Address {
+    const a = addressesOf(currentUser().id).find((x) => x.id === aid);
+    if (!a) throw err(404, 'ADDRESS_NOT_FOUND', '找不到收貨地址');
+    return a;
+  }
   function ownOrder(oid: string): Order {
     const o = (state.orders[currentUser().id] ?? []).find((x) => x.id === oid);
     if (!o) throw err(404, 'NOT_FOUND', '找不到訂單');
@@ -492,6 +497,31 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
         if (makeDefault) for (const a of list) a.is_default = false;
         const a: Address = { id: id('addr'), recipient: input.recipient.trim(), phone: normalisePhone(input.phone), region: input.region, line1: input.line1.trim(), is_default: makeDefault, created_at: new Date(now()).toISOString() };
         list.push(a);
+        return a;
+      }),
+    // §12 @a3d4304 planned routes (#44). Deleted addresses are removed from the book; orders keep their snapshot.
+    updateAddress: (aid, input) =>
+      run(() => {
+        const a = ownAddress(aid);
+        const first = Object.values(validateAddress(input))[0];
+        if (first) throw err(422, 'VALIDATION_FAILED', first);
+        Object.assign(a, { recipient: input.recipient.trim(), phone: normalisePhone(input.phone), region: input.region, line1: input.line1.trim() });
+        return a;
+      }),
+    deleteAddress: (aid) =>
+      run(() => {
+        const a = ownAddress(aid);
+        const list = addressesOf(currentUser().id);
+        list.splice(list.indexOf(a), 1);
+        if (a.is_default && list.length) {
+          const newest = [...list].sort((x, y) => y.created_at.localeCompare(x.created_at))[0];
+          newest.is_default = true;
+        }
+      }),
+    setDefaultAddress: (aid) =>
+      run(() => {
+        const a = ownAddress(aid);
+        for (const x of addressesOf(currentUser().id)) x.is_default = x === a;
         return a;
       }),
     createProduct: (input) =>

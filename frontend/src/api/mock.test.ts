@@ -375,3 +375,36 @@ describe('order status flow (#34)', () => {
     await expectCode(api.updateStaffOrderStatus(o.id, 'delivered' as never), 422, 'VALIDATION_FAILED');
   });
 });
+
+describe('address book (#44, §12 @a3d4304 planned routes)', () => {
+  beforeEach(() => loginAs('demo@example.com', 'demo1234'));
+  it('edits with validation and normalisation; is_default is not changed by PUT', async () => {
+    const a = await api.updateAddress('addr_office', { recipient: '陳大文', phone: '+852 2345-6789', region: '九龍', line1: '旺角彌敦道 1 號', is_default: true });
+    expect(a).toMatchObject({ recipient: '陳大文', phone: '23456789', region: '九龍', is_default: false });
+    await expectCode(api.updateAddress('addr_office', { recipient: '', phone: '1', region: 'x', line1: 'y' }), 422, 'VALIDATION_FAILED');
+    await expectCode(api.updateAddress('nope', { recipient: 'a', phone: '91234567', region: '九龍', line1: '旺角彌敦道 1 號' }), 404, 'ADDRESS_NOT_FOUND');
+  });
+  it('sets exactly one default', async () => {
+    await api.setDefaultAddress('addr_office');
+    const xs = await api.listAddresses();
+    expect(xs.filter((x) => x.is_default).map((x) => x.id)).toEqual(['addr_office']);
+    expect(xs[0].id).toBe('addr_office');
+  });
+  it('deleting the default promotes the newest remaining; orders keep their snapshot', async () => {
+    await api.addCartItem('p_007', 1);
+    const o = await api.createOrder('ab1', A);
+    const n = await api.createAddress({ recipient: '新', phone: '61234567', region: '新界', line1: '沙田正街 1 號' });
+    await api.deleteAddress('addr_home');
+    const xs = await api.listAddresses();
+    expect(xs.find((x) => x.is_default)!.id).toBe(n.id);
+    expect(xs.map((x) => x.id)).not.toContain('addr_home');
+    expect((await api.getOrder(o.id)).shipping_address).toBeTruthy();
+    await expectCode(api.deleteAddress('addr_home'), 404, 'ADDRESS_NOT_FOUND');
+    await api.addCartItem('p_007', 1);
+    await expectCode(api.createOrder('ab2', A), 404, 'ADDRESS_NOT_FOUND');
+  });
+  it("cannot touch another user's address", async () => {
+    await loginAs('staff@example.com', 'staff1234');
+    await expectCode(api.setDefaultAddress('addr_home'), 404, 'ADDRESS_NOT_FOUND');
+  });
+});

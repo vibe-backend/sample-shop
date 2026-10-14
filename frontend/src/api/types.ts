@@ -260,6 +260,12 @@ export interface ShopApi {
   updateStaffOrderStatus(orderId: string, status: 'shipped' | 'cancelled'): Promise<StaffOrder>;
   /** §2 #18 / §12 @a3d4304: POST /shop/v1/addresses → 201; 422 VALIDATION_FAILED, 422 ADDRESS_LIMIT. */
   createAddress(a: AddressInput): Promise<Address>;
+  /** §12 @a3d4304 (planned for #44, unverified): PUT /shop/v1/addresses/{id} → 200 Address; 404 ADDRESS_NOT_FOUND, 422 VALIDATION_FAILED. `is_default` is ignored — use setDefaultAddress. */
+  updateAddress(id: string, a: AddressInput): Promise<Address>;
+  /** §12 @a3d4304 (planned): DELETE /shop/v1/addresses/{id} → 204 (soft delete); deleting the default promotes the newest remaining address. */
+  deleteAddress(id: string): Promise<void>;
+  /** §12 @a3d4304 (planned): POST /shop/v1/addresses/{id}/default → 200 Address. */
+  setDefaultAddress(id: string): Promise<Address>;
   createProduct(p: ProductInput): Promise<Product>;
   updateProduct(id: string, p: Partial<ProductInput>): Promise<Product>;
   deleteProduct(id: string): Promise<void>;
