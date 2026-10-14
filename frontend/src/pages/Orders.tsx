@@ -1,7 +1,14 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { CircleCheck } from 'lucide-react';
 import { api, formatPrice, type Order, type OrderStatus } from '../api';
-import { ErrorNote, Spinner, useAsync } from '../components/ui';
+import { Empty, ErrorNote, PageTitle, Spinner, useAsync } from '../components/ui-helpers';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { cn } from '@/lib/utils';
+import { BackLink } from './Products';
 
 export const STATUS_LABEL: Record<OrderStatus, string> = {
   pending: '待處理',
@@ -13,6 +20,15 @@ export const STATUS_LABEL: Record<OrderStatus, string> = {
 
 export const formatDate = (iso: string) =>
   new Intl.DateTimeFormat('zh-Hant', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso));
+
+export function StatusBadge({ status }: { status: OrderStatus }) {
+  const tone = status === 'pending' ? 'bg-warning/15 text-warning' : status === 'cancelled' ? '' : 'bg-success/15 text-success';
+  return (
+    <Badge variant={status === 'cancelled' ? 'secondary' : 'default'} className={cn(tone)}>
+      {STATUS_LABEL[status] ?? status}
+    </Badge>
+  );
+}
 
 export function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
@@ -35,27 +51,31 @@ export function OrdersPage() {
 
   return (
     <section>
-      <h1>我的訂單</h1>
+      <PageTitle>我的訂單</PageTitle>
       <ErrorNote error={error} />
       {!loading && orders.length === 0 && !error ? (
-        <div className="empty">
+        <Empty>
           <p>還沒有訂單。</p>
-          <Link to="/" className="btn">
-            去逛逛
-          </Link>
-        </div>
+          <Button asChild>
+            <Link to="/">去逛逛</Link>
+          </Button>
+        </Empty>
       ) : (
-        <ul className="orders">
+        <ul className="grid gap-2.5">
           {orders.map((o) => (
             <li key={o.id}>
-              <Link to={`/orders/${o.id}`} className="order-row">
-                <div>
-                  <strong>#{o.id}</strong>
-                  <span className="muted">{formatDate(o.created_at)}</span>
-                </div>
-                <span className={`status s-${o.status}`}>{STATUS_LABEL[o.status] ?? o.status}</span>
-                <span className="muted">{o.items.reduce((s, i) => s + i.quantity, 0)} 件</span>
-                <strong>{formatPrice(o.total_cents, o.currency)}</strong>
+              <Link to={`/orders/${o.id}`} className="group block rounded-xl focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none">
+                <Card className="py-0 transition-colors group-hover:ring-primary/60">
+                  <CardContent className="grid grid-cols-[1fr_auto] items-center gap-4 py-3.5 sm:grid-cols-[1fr_auto_60px_120px]">
+                    <div className="grid">
+                      <strong>#{o.id}</strong>
+                      <span className="text-muted-foreground">{formatDate(o.created_at)}</span>
+                    </div>
+                    <StatusBadge status={o.status} />
+                    <span className="hidden text-muted-foreground sm:block">{o.items.reduce((s, i) => s + i.quantity, 0)} 件</span>
+                    <strong className="col-span-2 text-right sm:col-span-1">{formatPrice(o.total_cents, o.currency)}</strong>
+                  </CardContent>
+                </Card>
               </Link>
             </li>
           ))}
@@ -63,10 +83,10 @@ export function OrdersPage() {
       )}
       {loading && <Spinner />}
       {cursor && !loading && (
-        <div className="center">
-          <button className="btn secondary" onClick={() => load(cursor)}>
+        <div className="mt-6 text-center">
+          <Button variant="outline" size="lg" onClick={() => load(cursor)}>
             載入更多
-          </button>
+          </Button>
         </div>
       )}
     </section>
@@ -80,54 +100,54 @@ export function OrderDetailPage() {
   if (loading) return <Spinner />;
   if (!o) return <ErrorNote error={error} />;
   return (
-    <section className="order-detail">
+    <section>
       {params.get('placed') && (
-        <div className="confirm" role="status">
-          <span className="check" aria-hidden="true">
-            ✓
-          </span>
+        <div className="mb-5 flex items-center gap-4 rounded-xl border border-success/35 bg-success/10 p-5" role="status">
+          <CircleCheck className="size-11 shrink-0 text-success" aria-hidden="true" />
           <div>
-            <h1>訂單已成立</h1>
+            <h1 className="text-2xl font-semibold tracking-tight">訂單已成立</h1>
             <p>感謝你的訂購！訂單編號 #{o.id}。</p>
           </div>
         </div>
       )}
-      <Link to="/orders" className="back">
-        ‹ 所有訂單
-      </Link>
-      <div className="panel">
-        <div className="row">
-          <h2>訂單 #{o.id}</h2>
-          <span className={`status s-${o.status}`}>{STATUS_LABEL[o.status] ?? o.status}</span>
-        </div>
-        <p className="muted">下單時間：{formatDate(o.created_at)}</p>
-        <table className="items">
-          <thead>
-            <tr>
-              <th>商品</th>
-              <th>單價</th>
-              <th>數量</th>
-              <th>小計</th>
-            </tr>
-          </thead>
-          <tbody>
-            {o.items.map((it) => (
-              <tr key={it.product_id}>
-                <td>{it.name}</td>
-                <td>{formatPrice(it.unit_price_cents, o.currency)}</td>
-                <td>{it.quantity}</td>
-                <td>{formatPrice(it.line_total_cents, o.currency)}</td>
-              </tr>
-            ))}
-          </tbody>
-          <tfoot>
-            <tr>
-              <td colSpan={3}>總計</td>
-              <td>{formatPrice(o.total_cents, o.currency)}</td>
-            </tr>
-          </tfoot>
-        </table>
-      </div>
+      <BackLink to="/orders">所有訂單</BackLink>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">訂單 #{o.id}</CardTitle>
+          <CardDescription>下單時間：{formatDate(o.created_at)}</CardDescription>
+          <CardAction>
+            <StatusBadge status={o.status} />
+          </CardAction>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>商品</TableHead>
+                <TableHead>單價</TableHead>
+                <TableHead>數量</TableHead>
+                <TableHead className="text-right">小計</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {o.items.map((it) => (
+                <TableRow key={it.product_id}>
+                  <TableCell>{it.name}</TableCell>
+                  <TableCell>{formatPrice(it.unit_price_cents, o.currency)}</TableCell>
+                  <TableCell>{it.quantity}</TableCell>
+                  <TableCell className="text-right">{formatPrice(it.line_total_cents, o.currency)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+            <TableFooter>
+              <TableRow>
+                <TableCell colSpan={3}>總計</TableCell>
+                <TableCell className="text-right">{formatPrice(o.total_cents, o.currency)}</TableCell>
+              </TableRow>
+            </TableFooter>
+          </Table>
+        </CardContent>
+      </Card>
     </section>
   );
 }

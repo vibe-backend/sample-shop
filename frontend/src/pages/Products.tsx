@@ -1,8 +1,16 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { ChevronLeft, Search } from 'lucide-react';
 import { api, formatPrice, type Product, type ProductSort } from '../api';
 import { useAuth } from '../auth';
-import { ErrorNote, Spinner, useAsync } from '../components/ui';
+import { Empty, ErrorNote, Spinner, useAsync } from '../components/ui-helpers';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Skeleton } from '@/components/ui/skeleton';
 
 export const CATEGORIES = ['廚房', '配件', '文具', '家居', '電子', '食品'];
 
@@ -13,13 +21,33 @@ const SORTS: [ProductSort, string][] = [
   ['price_desc', '價格：高至低'],
 ];
 
+/** Radix Select cannot use an empty value, so "all categories" uses a sentinel. */
+const ALL = '__all';
+
 const toCents = (v: string | null) => (v && !Number.isNaN(Number(v)) ? Math.round(Number(v) * 100) : undefined);
 
 export function StockTag({ p }: { p: Pick<Product, 'in_stock' | 'stock' | 'active'> }) {
-  if (!p.active) return <span className="tag muted">已下架</span>;
-  if (!p.in_stock) return <span className="tag warn">已售完</span>;
-  if (p.stock <= 5) return <span className="tag">剩 {p.stock} 件</span>;
+  if (!p.active) return <Badge variant="outline" className="text-muted-foreground">已下架</Badge>;
+  if (!p.in_stock) return <Badge className="bg-warning/15 text-warning">已售完</Badge>;
+  if (p.stock <= 5) return <Badge variant="secondary">剩 {p.stock} 件</Badge>;
   return null;
+}
+
+function GridSkeleton() {
+  return (
+    <ul className="grid grid-cols-2 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(230px,1fr))] sm:gap-5" aria-hidden="true">
+      {Array.from({ length: 8 }, (_, i) => (
+        <li key={i} className="overflow-hidden rounded-xl ring-1 ring-foreground/10">
+          <Skeleton className="aspect-square rounded-none" />
+          <div className="space-y-2 p-4">
+            <Skeleton className="h-3 w-12" />
+            <Skeleton className="h-4 w-3/4" />
+            <Skeleton className="h-4 w-16" />
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 export function ProductListPage() {
@@ -85,75 +113,104 @@ export function ProductListPage() {
 
   return (
     <>
-      <section className="hero">
-        <h1>精選好物</h1>
-        <p>為日常挑選的小物，簡單、耐用、好看。</p>
+      <section className="pt-4 pb-2">
+        <h1 className="mb-1 text-4xl font-semibold tracking-tight sm:text-5xl">精選好物</h1>
+        <p className="mb-6 text-lg text-muted-foreground">為日常挑選的小物，簡單、耐用、好看。</p>
       </section>
-      <form className="filters" onSubmit={submit} role="search">
-        <input type="search" placeholder="搜尋商品…" aria-label="搜尋商品" value={draft} onChange={(e) => setDraft(e.target.value)} />
-        <select aria-label="分類" value={category} onChange={(e) => set('category', e.target.value)}>
-          <option value="">全部分類</option>
-          {CATEGORIES.map((c) => (
-            <option key={c}>{c}</option>
-          ))}
-        </select>
-        <div className="price-range">
-          <input type="number" min="0" inputMode="decimal" placeholder="最低價" aria-label="最低價（HK$）" value={min} onChange={(e) => set('min', e.target.value)} />
-          <span aria-hidden="true">–</span>
-          <input type="number" min="0" inputMode="decimal" placeholder="最高價" aria-label="最高價（HK$）" value={max} onChange={(e) => set('max', e.target.value)} />
+      <form className="mb-6 grid grid-cols-2 gap-2.5 md:grid-cols-[1fr_auto_auto_auto_auto]" onSubmit={submit} role="search">
+        <div className="relative col-span-2 md:col-span-1">
+          <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+          <Input type="search" placeholder="搜尋商品…" aria-label="搜尋商品" className="h-10 pl-9" value={draft} onChange={(e) => setDraft(e.target.value)} />
         </div>
-        <select aria-label="排序" value={sort} onChange={(e) => set('sort', e.target.value)}>
-          {SORTS.map(([v, l]) => (
-            <option key={v} value={v}>
-              {l}
-            </option>
-          ))}
-        </select>
-        <button className="btn" type="submit">
+        <Select value={category || ALL} onValueChange={(v) => set('category', v === ALL ? '' : v)}>
+          <SelectTrigger aria-label="分類" className="h-10! w-full md:w-32">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL}>全部分類</SelectItem>
+            {CATEGORIES.map((c) => (
+              <SelectItem key={c} value={c}>
+                {c}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={sort} onValueChange={(v) => set('sort', v)}>
+          <SelectTrigger aria-label="排序" className="h-10! w-full md:order-last md:w-36">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {SORTS.map(([v, l]) => (
+              <SelectItem key={v} value={v}>
+                {l}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <div className="col-span-2 flex items-center gap-1.5 md:col-span-1">
+          <Input type="number" min="0" inputMode="decimal" placeholder="最低價" aria-label="最低價（HK$）" className="h-10 md:w-24" value={min} onChange={(e) => set('min', e.target.value)} />
+          <span className="text-muted-foreground" aria-hidden="true">
+            –
+          </span>
+          <Input type="number" min="0" inputMode="decimal" placeholder="最高價" aria-label="最高價（HK$）" className="h-10 md:w-24" value={max} onChange={(e) => set('max', e.target.value)} />
+        </div>
+        <Button type="submit" className="col-span-2 h-10 px-5 md:order-last md:col-span-1">
           搜尋
-        </button>
+        </Button>
       </form>
       <ErrorNote error={error} />
       {loading ? (
-        <Spinner />
+        <GridSkeleton />
       ) : items.length === 0 ? (
-        <section className="empty">
+        <Empty>
           <p>找不到符合條件的商品。</p>
-          <button className="link-btn" onClick={() => setParams({})}>
+          <Button variant="link" onClick={() => setParams({})}>
             清除篩選
-          </button>
-        </section>
+          </Button>
+        </Empty>
       ) : (
         <>
-          <ul className="grid">
+          <ul className="grid grid-cols-2 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(230px,1fr))] sm:gap-5">
             {items.map((p) => (
               <li key={p.id}>
-                <Link to={`/products/${p.id}`} className="card">
-                  <div className="thumb">
-                    <img src={p.image_urls[0]} alt="" loading="lazy" />
-                  </div>
-                  <div className="card-body">
-                    <span className="cat">{p.category}</span>
-                    <h2>{p.name}</h2>
-                    <div className="row">
-                      <span className="price">{formatPrice(p.price_cents, p.currency)}</span>
-                      <StockTag p={p} />
+                <Link to={`/products/${p.id}`} className="group block rounded-xl focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none">
+                  <Card className="gap-0 py-0 transition-transform group-hover:-translate-y-0.5">
+                    <div className="aspect-square bg-muted">
+                      <img src={p.image_urls[0]} alt="" loading="lazy" className="size-full object-cover" />
                     </div>
-                  </div>
+                    <CardContent className="space-y-1 px-3 py-3 sm:px-4 sm:pb-4">
+                      <span className="text-xs text-muted-foreground">{p.category}</span>
+                      <h2 className="font-semibold">{p.name}</h2>
+                      <div className="flex flex-wrap items-center justify-between gap-1">
+                        <span className="font-semibold">{formatPrice(p.price_cents, p.currency)}</span>
+                        <StockTag p={p} />
+                      </div>
+                    </CardContent>
+                  </Card>
                 </Link>
               </li>
             ))}
           </ul>
           {cursor && (
-            <div className="center">
-              <button className="btn secondary" onClick={loadMore} disabled={more}>
+            <div className="mt-6 text-center">
+              <Button variant="outline" size="lg" onClick={loadMore} disabled={more}>
                 {more ? '載入中…' : '載入更多'}
-              </button>
+              </Button>
             </div>
           )}
         </>
       )}
     </>
+  );
+}
+
+export function BackLink({ to, children }: { to: string; children: string }) {
+  return (
+    <Button variant="link" asChild className="mb-3 h-auto px-0">
+      <Link to={to}>
+        <ChevronLeft /> {children}
+      </Link>
+    </Button>
   );
 }
 
@@ -187,34 +244,39 @@ export function ProductDetailPage() {
   }
 
   return (
-    <article className="detail">
-      <Link to="/" className="back">
-        ‹ 返回商品
-      </Link>
-      <div className="detail-grid">
-        <div className="detail-img">
-          <img src={p.image_urls[0]} alt={p.name} />
+    <article>
+      <BackLink to="/">返回商品</BackLink>
+      <div className="grid items-start gap-6 md:grid-cols-[1.1fr_1fr] md:gap-12">
+        <div className="overflow-hidden rounded-3xl bg-muted">
+          <img src={p.image_urls[0]} alt={p.name} className="w-full" />
         </div>
-        <div className="detail-info">
-          <span className="cat">{p.category}</span>
-          <h1>{p.name}</h1>
-          <p className="price big">{formatPrice(p.price_cents, p.currency)}</p>
-          <p className="desc">{p.description}</p>
-          <p className="stock">
+        <div className="space-y-4">
+          <div>
+            <span className="text-sm text-muted-foreground">{p.category}</span>
+            <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">{p.name}</h1>
+          </div>
+          <p className="text-2xl font-semibold">{formatPrice(p.price_cents, p.currency)}</p>
+          <p className="text-muted-foreground">{p.description}</p>
+          <p className="flex items-center gap-2 text-sm">
             {p.in_stock ? `庫存 ${p.stock} 件` : '目前缺貨'} <StockTag p={p} />
           </p>
-          <div className="buy">
-            <label className="qty">
-              數量
-              <input type="number" min={1} max={99} value={qty} onChange={(e) => setQty(Math.max(1, Math.min(99, Number(e.target.value) || 1)))} />
-            </label>
-            <button className="btn" onClick={add} disabled={busy || !p.in_stock || !p.active}>
+          <div className="flex items-end gap-3 pt-2">
+            <div className="grid gap-1.5">
+              <Label htmlFor="qty" className="text-xs text-muted-foreground">
+                數量
+              </Label>
+              <Input id="qty" type="number" min={1} max={99} className="h-10 w-20" value={qty} onChange={(e) => setQty(Math.max(1, Math.min(99, Number(e.target.value) || 1)))} />
+            </div>
+            <Button size="lg" className="h-10 px-6" onClick={add} disabled={busy || !p.in_stock || !p.active}>
               {busy ? '加入中…' : p.in_stock ? '加入購物車' : '已售完'}
-            </button>
+            </Button>
           </div>
           {msg && (
-            <p className="ok" role="status">
-              {msg}・<Link to="/cart">查看購物車</Link>
+            <p className="text-sm text-success" role="status">
+              {msg}・
+              <Link to="/cart" className="text-primary hover:underline">
+                查看購物車
+              </Link>
             </p>
           )}
           <ErrorNote error={addErr} />
