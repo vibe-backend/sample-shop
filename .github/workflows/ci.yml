@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: DavidAnson/markdownlint-cli2-action@v20
+      - uses: DavidAnson/markdownlint-cli2-action@v24
         with:
           globs: "**/*.md"
       - uses: lycheeverse/lychee-action@v2
@@ -46,11 +46,13 @@ jobs:
       - if: steps.detect.outputs.node == 'true'
         uses: actions/setup-node@v4
         with:
-          node-version: lts/*
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ${{ matrix.component }}/package-lock.json
       - if: steps.detect.outputs.node == 'true'
         working-directory: ${{ matrix.component }}
         run: |
-          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+          npm ci
           npm run lint --if-present
           npm test --if-present
       # Rust (backend using the SDK)
@@ -58,6 +60,11 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+      - if: steps.detect.outputs.rust == 'true'
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ matrix.component }}
+          save-if: ${{ github.event_name != 'pull_request' }}
       - if: steps.detect.outputs.rust == 'true'
         working-directory: ${{ matrix.component }}
         run: |
@@ -85,6 +92,6 @@ jobs:
           context: ${{ matrix.component }}
           push: false
           cache-from: type=gha,scope=${{ matrix.component }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.component }}
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=gha,mode=max,scope={0}', matrix.component) || '' }}
       - if: steps.detect.outputs.present != 'true'
         run: echo "No ${{ matrix.component }}/Dockerfile yet; skipping."
