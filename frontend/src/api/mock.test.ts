@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { createMockApi } from './mock';
+import { createMockApi, migrateV1 } from './mock';
+import { seedProducts } from './seed';
 import { formatPrice, lineTotal, subtotal } from './money';
 import { ApiRequestError } from './types';
 
@@ -155,3 +156,46 @@ describe('cart and orders', () => {
     await expectCode(api.listStaffProducts(), 403, 'FORBIDDEN');
   });
 });
+
+describe('staff edits', () => {
+  beforeEach(() => loginAs('staff@example.com', 'staff1234'));
+  it('keeps explicit price/stock edits on products without variants', async () => {
+    const p = await api.updateProduct('p_007', { price_cents: 50000, stock: 7 });
+    expect(p).toMatchObject({ price_cents: 50000, stock: 7, in_stock: true });
+  });
+  it('rejects changing derived price/stock on SKU products instead of silently overwriting', async () => {
+    await expectCode(api.updateProduct('p_003', { price_cents: 1 }), 422, 'VARIANT_MANAGED');
+    await expectCode(api.updateProduct('p_003', { stock: 99 }), 422, 'VARIANT_MANAGED');
+    const p = await api.updateProduct('p_003', { name: '新名', price_cents: 32000, stock: 15 });
+    expect(p).toMatchObject({ name: '新名', price_cents: 32000, stock: 15 });
+  });
+});
+
+describe('storage migration v1 → v2', () => {
+  it('keeps orders and edits, attaches SKUs and drops cart lines that now need a spec', () => {
+    const v1Products = seedProducts().map(({ options: _o, variants: _v, ...p }) => (void _o, void _v, { ...p }));
+    v1Products[6].name = '已改名';
+    const v1 = { ...createMockApi().state, products: v1Products, carts: { u_demo: [{ id: 'ci_1', product_id: 'p_003', quantity: 1 }, { id: 'ci_2', product_id: 'p_007', quantity: 2 }] }, orders: { u_demo: [{ id: 'ord_x' }] } };
+    const m = migrateV1(v1 as never);
+    expect(m.products[6].name).toBe('已改名');
+    expect(m.products[2].variants).toHaveLength(6);
+    expect(m.carts.u_demo.map((l) => l.id)).toEqual(['ci_2']);
+    expect(m.orders.u_demo).toHaveLength(1);
+  });
+  it('migrates persisted v1 data on load and removes the old key', () => {
+    const store = new Map<string, string>();
+    const ls = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v), removeItem: (k: string) => void store.delete(k) };
+    const prev = (globalThis as { localStorage?: unknown }).localStorage;
+    (globalThis as { localStorage?: unknown }).localStorage = ls;
+    try {
+      store.set('shop.mock.v1', JSON.stringify({ ...createMockApi().state, orders: { u_demo: [{ id: 'ord_old' }] } }));
+      const a = createMockApi({ persist: true });
+      expect(a.state.orders.u_demo[0].id).toBe('ord_old');
+      expect(store.has('shop.mock.v1')).toBe(false);
+      expect(store.has('shop.mock.v2')).toBe(true);
+    } finally {
+      (globalThis as { localStorage?: unknown }).localStorage = prev;
+    }
+  });
+});
+

@@ -83,7 +83,9 @@ const VARIANTS: Record<string, VariantSeed> = {
   },
 };
 
-function withVariants(p: Product): Product {
+/** Attaches the demo SKUs for known slugs (idempotent for products that already have variants). */
+export function withVariants(p: Product): Product {
+  if (p.variants?.length) return p;
   const seed = VARIANTS[p.slug];
   if (!seed) return p;
   const variants: ProductVariant[] = seed.rows.map(([vals, price, stock], i) => ({

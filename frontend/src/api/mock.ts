@@ -1,5 +1,5 @@
 import { lineTotal, subtotal } from './money';
-import { DEMO_USERS, type SeedUser, seedProducts, syncVariantTotals } from './seed';
+import { DEMO_USERS, type SeedUser, seedProducts, syncVariantTotals, withVariants } from './seed';
 import {
   ApiRequestError,
   type AuthToken,
@@ -42,6 +42,18 @@ export interface MockOptions {
 
 // v2: products carry SKU variants (#17).
 const STORAGE_KEY = 'shop.mock.v2';
+const LEGACY_KEY = 'shop.mock.v1';
+
+/**
+ * v1 → v2: keep users, orders, carts and staff product edits; attach demo SKUs to seeded
+ * slugs and drop cart lines that now need a spec (they cannot be bought without one).
+ */
+export function migrateV1(v1: MockState): MockState {
+  const products = v1.products.map((p) => withVariants({ ...p }));
+  const needsSku = new Set(products.filter((p) => p.variants?.length).map((p) => p.id));
+  const carts = Object.fromEntries(Object.entries(v1.carts ?? {}).map(([uid, lines]) => [uid, lines.filter((l) => !needsSku.has(l.product_id))]));
+  return { ...v1, products, carts, sessions: {} };
+}
 const TOKEN_TTL_MS = 60 * 60 * 1000;
 const PAGE_SIZE = 8;
 const MAX_QTY = 99;
@@ -67,6 +79,17 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
           return { ...(JSON.parse(raw) as MockState), sessions: {} };
         } catch {
           /* fall through to a fresh seed */
+        }
+      }
+      const legacy = globalThis.localStorage?.getItem(LEGACY_KEY);
+      if (legacy) {
+        globalThis.localStorage?.removeItem(LEGACY_KEY);
+        try {
+          const migrated = migrateV1(JSON.parse(legacy) as MockState);
+          globalThis.localStorage?.setItem(STORAGE_KEY, JSON.stringify(migrated));
+          return migrated;
+        } catch {
+          /* corrupt v1 data: start fresh */
         }
       }
     }
@@ -313,6 +336,11 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
         requireStaff();
         validateProduct(patch);
         const p = findProduct(pid, true);
+        if (p.variants?.length) {
+          // Price/stock of a SKU product are derived from its variants; an explicit change would be lost.
+          if ((patch.price_cents !== undefined && patch.price_cents !== p.price_cents) || (patch.stock !== undefined && patch.stock !== p.stock))
+            throw err(422, 'VARIANT_MANAGED', '此商品設有規格，價格及庫存須按規格修改');
+        }
         if (patch.slug && state.products.some((x) => x.slug === patch.slug && x.id !== p.id)) throw err(409, 'SLUG_TAKEN', '此 slug 已被使用');
         Object.assign(p, patch);
         p.in_stock = p.stock > 0;

@@ -49,6 +49,10 @@ VITE_API_BASE_URL=https://your-backend.example
 
 The real adapter (`src/api/real.ts`) is written against the contract but has not been run against a backend yet.
 
+**Product SKUs / variants (#17) are mock-only for now.** `backend/CONTRACT.md` does not define `options`, `variants` or `sku_id` yet; the real adapter already sends `sku_id` and reads those fields, but until the backend adds them every product behaves as a single-spec product in real mode.
+
+Mock data is stored in `localStorage` under `shop.mock.v2`. Data from the older `shop.mock.v1` key is migrated once on load (users, orders and staff edits kept; demo SKUs attached; cart lines for products that now need a spec are dropped) and the old key is removed.
+
 ### Mock mode
 
 - Seed data lives in `src/api/seed.ts`: 13 products, one of them inactive. Product images are generated placeholder SVGs.
