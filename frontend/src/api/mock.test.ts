@@ -4,6 +4,7 @@ import { seedProducts, syncVariantTotals } from './seed';
 import { formatPrice, lineTotal, subtotal } from './money';
 import { ApiRequestError } from './types';
 
+const A = { address_id: 'addr_home' };
 let token: string | null = null;
 let api: ReturnType<typeof createMockApi>;
 
@@ -103,15 +104,15 @@ describe('cart and orders', () => {
 
   it('creates an order idempotently, snapshots items, clears the cart and decrements stock', async () => {
     await api.addCartItem('p_002', 2);
-    const o1 = await api.createOrder('key-1');
-    const o2 = await api.createOrder('key-1');
+    const o1 = await api.createOrder('key-1', A);
+    const o2 = await api.createOrder('key-1', A);
     expect(o2.id).toBe(o1.id);
     expect(o1.total_cents).toBe(2 * 68000);
     expect(o1.items[0]).toMatchObject({ name: '手沖咖啡入門組', unit_price_cents: 68000, quantity: 2 });
     expect((await api.getCart()).items).toHaveLength(0);
     expect((await api.getProduct('p_002')).stock).toBe(6);
     expect((await api.listOrders()).items).toHaveLength(1);
-    await expectCode(api.createOrder('key-2'), 422, 'CART_EMPTY');
+    await expectCode(api.createOrder('key-2', A), 422, 'CART_EMPTY');
   });
 
   it('forbids product management for non-staff', async () => {
@@ -139,7 +140,7 @@ describe('cart and orders', () => {
 
   it('snapshots SKU options on orders and decrements SKU stock', async () => {
     await api.addCartItem('p_003', 2, 'p_003_sku2');
-    const o = await api.createOrder('k-sku');
+    const o = await api.createOrder('k-sku', A);
     expect(o.items[0]).toMatchObject({ sku_id: 'p_003_sku2', sku_options: { 顏色: '米白', 尺寸: '大' }, unit_price_cents: 36000 });
     const p = await api.getProduct('p_003');
     expect(p.variants!.find((v) => v.id === 'p_003_sku2')!.stock).toBe(2);
@@ -154,16 +155,16 @@ describe('cart and orders', () => {
 
   it('rejects reusing a key with a different body (409 IDEMPOTENCY_KEY_REUSED)', async () => {
     await api.addCartItem('p_007', 1);
-    const o = await api.createOrder('k1', {});
-    expect((await api.createOrder('k1', {})).id).toBe(o.id);
-    await expectCode(api.createOrder('k1', { note: 'x' }), 409, 'IDEMPOTENCY_KEY_REUSED');
+    const o = await api.createOrder('k1', A);
+    expect((await api.createOrder('k1', A)).id).toBe(o.id);
+    await expectCode(api.createOrder('k1', { ...A, note: 'x' }), 409, 'IDEMPOTENCY_KEY_REUSED');
   });
 
   it('rejects ordering when a cart line became unavailable and flags it in the cart', async () => {
     await api.addCartItem('p_003', 1, 'p_003_sku1');
     await api.addCartItem('p_007', 1);
     api.state.products.find((x) => x.id === 'p_003')!.variants = [];
-    await expectCode(api.createOrder('k-u'), 409, 'PRODUCT_UNAVAILABLE');
+    await expectCode(api.createOrder('k-u', A), 409, 'PRODUCT_UNAVAILABLE');
     const cart = await api.getCart();
     expect(cart.items.map((i) => i.product.in_stock)).toEqual([false, true]);
   });
@@ -229,6 +230,41 @@ describe('SKU contract rules (CONTRACT.md @dd5bf0b §9)', () => {
     tote.variants![0].stock = 0;
     tote.variants![0].in_stock = false;
     expect(syncVariantTotals(tote).price_cents).toBe(32000);
+  });
+});
+
+describe('delivery addresses (#29)', () => {
+  beforeEach(() => loginAs('demo@example.com', 'demo1234'));
+  it('lists the default address first', async () => {
+    const xs = await api.listAddresses();
+    expect(xs[0]).toMatchObject({ id: 'addr_home', is_default: true });
+    expect(xs).toHaveLength(2);
+  });
+  it('requires an address to order (422 ADDRESS_REQUIRED / 404 ADDRESS_NOT_FOUND)', async () => {
+    await api.addCartItem('p_007', 1);
+    await expectCode(api.createOrder('a1'), 422, 'ADDRESS_REQUIRED');
+    await expectCode(api.createOrder('a2', { address_id: 'nope' }), 404, 'ADDRESS_NOT_FOUND');
+  });
+  it('snapshots the address on the order; later address changes do not affect it', async () => {
+    await api.addCartItem('p_007', 1);
+    const o = await api.createOrder('a3', { address_id: 'addr_office' });
+    expect(o.shipping_address).toEqual({ recipient: '陳小明', phone: '23456789', region: '香港島', line1: '中環皇后大道中 99 號 30 樓' });
+    api.state.addresses!.u_demo[1].line1 = '已搬走';
+    expect((await api.getOrder(o.id)).shipping_address!.line1).toBe('中環皇后大道中 99 號 30 樓');
+  });
+  it('validates and normalises new addresses; first address becomes default', async () => {
+    await api.register({ email: 'new@example.com', password: 'secret123', display_name: '新用戶' }).then((t) => (token = t.access_token));
+    expect(await api.listAddresses()).toEqual([]);
+    await expectCode(api.createAddress({ recipient: '', phone: '123', region: '火星', line1: 'x' }), 422, 'VALIDATION_ERROR');
+    const a = await api.createAddress({ recipient: '新用戶', phone: '+852 6123-4567', region: '新界', line1: '沙田正街 1 號' });
+    expect(a).toMatchObject({ phone: '61234567', is_default: true });
+    const b = await api.createAddress({ recipient: '新用戶', phone: '61234567', region: '九龍', line1: '尖沙咀廣東道 5 號', is_default: true });
+    const xs = await api.listAddresses();
+    expect(xs.map((x) => [x.id, x.is_default])).toEqual([[b.id, true], [a.id, false]]);
+  });
+  it('caps saved addresses at 20 (422 ADDRESS_LIMIT)', async () => {
+    for (let i = 0; i < 18; i++) await api.createAddress({ recipient: '陳小明', phone: '91234567', region: '九龍', line1: `彌敦道 ${i + 1} 號` });
+    await expectCode(api.createAddress({ recipient: '陳小明', phone: '91234567', region: '九龍', line1: '彌敦道 99 號' }), 422, 'ADDRESS_LIMIT');
   });
 });
 

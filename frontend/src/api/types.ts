@@ -150,17 +150,50 @@ export interface OrderItem {
   line_total_cents: number;
 }
 
+/**
+ * Contract addition (#29, reusable by the #44 address book): a saved delivery address.
+ * GET/POST /shop/v1/addresses (JWT, own addresses only).
+ */
+export interface Address {
+  id: string;
+  recipient: string;
+  /** 8-digit HK number, stored normalised (no +852 / spaces). */
+  phone: string;
+  /** One of 香港島 / 九龍 / 新界 / 離島 */
+  region: string;
+  /** 詳細地址 */
+  line1: string;
+  is_default: boolean;
+  created_at: string;
+}
+
+export interface AddressInput {
+  recipient: string;
+  phone: string;
+  region: string;
+  line1: string;
+  is_default?: boolean;
+}
+
+/** Copied onto the order at placement; later address-book edits never change it. */
+export type AddressSnapshot = Pick<Address, 'recipient' | 'phone' | 'region' | 'line1'>;
+
 export interface Order {
   id: string;
   status: OrderStatus;
+  /** Contract addition (#29): delivery address snapshot. */
+  shipping_address?: AddressSnapshot | null;
   items: OrderItem[];
   total_cents: number;
   currency: string;
   created_at: string;
 }
 
-/** POST /shop/v1/orders body; `{}` for now. */
-export type CreateOrderInput = Record<string, unknown>;
+/** POST /shop/v1/orders body. Contract addition (#29): `address_id` (required). */
+export interface CreateOrderInput {
+  address_id?: string;
+  [k: string]: unknown;
+}
 
 export interface ShopApi {
   login(c: Credentials): Promise<AuthToken>;
@@ -181,6 +214,10 @@ export interface ShopApi {
   createOrder(idempotencyKey: string, body?: CreateOrderInput): Promise<Order>;
   listOrders(cursor?: string): Promise<Page<Order>>;
   getOrder(id: string): Promise<Order>;
+  /** Contract addition (#29): GET /shop/v1/addresses — default first. */
+  listAddresses(): Promise<Address[]>;
+  /** Contract addition (#29): POST /shop/v1/addresses */
+  createAddress(a: AddressInput): Promise<Address>;
   createProduct(p: ProductInput): Promise<Product>;
   updateProduct(id: string, p: Partial<ProductInput>): Promise<Product>;
   deleteProduct(id: string): Promise<void>;

@@ -1,7 +1,8 @@
 import { useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Minus, Plus } from 'lucide-react';
-import { ApiRequestError, api, formatPrice, type Cart } from '../api';
+import { ApiRequestError, api, formatPrice, type Address, type Cart } from '../api';
+import { AddAddressButton, AddressDialog, AddressPicker } from '../components/address';
 import { useAuth } from '../auth';
 import { Empty, ErrorNote, PageTitle, Spinner, useAsync } from '../components/ui-helpers';
 import { Badge } from '@/components/ui/badge';
@@ -121,9 +122,16 @@ export function CheckoutPage() {
   const cart = fresh ?? loadedCart;
   const [busy, setBusy] = useState(false);
   const [unavailable, setUnavailable] = useState<Set<string>>(new Set());
+  const [loadedAddrs, addrErr, addrLoading] = useAsync(() => api.listAddresses(), []);
+  const [addrs, setAddrs] = useState<Address[] | null>(null);
+  const addresses = addrs ?? loadedAddrs ?? [];
+  const [picked, setPicked] = useState<string | null>(null);
+  // Default address preselected; the list is sorted default-first.
+  const addressId = picked ?? addresses.find((a) => a.is_default)?.id ?? addresses[0]?.id ?? null;
+  const [addOpen, setAddOpen] = useState(false);
   const [placeErr, setPlaceErr] = useState<unknown>(null);
 
-  if (loading) return <Spinner />;
+  if (loading || addrLoading) return <Spinner />;
   if (!cart) return <ErrorNote error={error} />;
   if (cart.items.length === 0)
     return (
@@ -138,13 +146,14 @@ export function CheckoutPage() {
   const currency = cart.items[0].product.currency;
 
   async function place() {
+    if (!addressId) return;
     setBusy(true);
     setPlaceErr(null);
     // CONTRACT.md §10 @47bc45e: a new key per press of 確認下單; the real adapter's automatic
     // TX_CONFLICT / network retries reuse it. `busy` blocks double-clicks.
     const idemKey = crypto.randomUUID();
     try {
-      const o = await api.createOrder(idemKey);
+      const o = await api.createOrder(idemKey, { address_id: addressId });
       setCartCount(0);
       nav(`/orders/${o.id}?placed=1`, { replace: true });
     } catch (e) {
@@ -177,6 +186,26 @@ export function CheckoutPage() {
           </CardContent>
           <Separator />
           <CardHeader>
+            <CardTitle>收貨地址</CardTitle>
+          </CardHeader>
+          <CardContent className="-mt-2 grid gap-3">
+            <ErrorNote error={addrErr} />
+            {addresses.length === 0 ? (
+              <div className="rounded-lg border border-dashed p-4 text-sm" role="status">
+                <p className="mb-2 text-muted-foreground">你還沒有收貨地址，請先新增才可下單。</p>
+                <AddAddressButton onClick={() => setAddOpen(true)} label="新增收貨地址" />
+              </div>
+            ) : (
+              <>
+                <AddressPicker addresses={addresses} value={addressId} onChange={setPicked} />
+                <div>
+                  <AddAddressButton onClick={() => setAddOpen(true)} />
+                </div>
+              </>
+            )}
+          </CardContent>
+          <Separator />
+          <CardHeader>
             <CardTitle>商品</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
@@ -192,7 +221,7 @@ export function CheckoutPage() {
                 </li>
               ))}
             </ul>
-            <p className="pt-2 text-xs text-muted-foreground">合約暫未定義收件地址及付款欄位；示範模式下單後狀態為「待處理」。</p>
+            <p className="pt-2 text-xs text-muted-foreground">合約暫未定義付款欄位；示範模式下單後狀態為「待處理」。</p>
           </CardContent>
         </Card>
         <Summary label="總計" cents={cart.subtotal_cents} currency={currency}>
@@ -202,7 +231,8 @@ export function CheckoutPage() {
               <Link to="/cart">前往購物車移除無法購買的商品</Link>
             </Button>
           )}
-          <Button size="lg" className="h-10" onClick={place} disabled={busy}>
+          {!addressId && <p className="text-sm text-destructive">請先新增收貨地址</p>}
+          <Button size="lg" className="h-10" onClick={place} disabled={busy || !addressId}>
             {busy ? '處理中…' : '確認下單'}
           </Button>
           <Button variant="link" asChild>
@@ -210,6 +240,17 @@ export function CheckoutPage() {
           </Button>
         </Summary>
       </div>
+      <AddressDialog
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        defaultName={me?.display_name ?? ''}
+        forceDefault={addresses.length === 0}
+        onCreated={(a) => {
+          const rest = a.is_default ? addresses.map((x) => ({ ...x, is_default: false })) : addresses;
+          setAddrs([...rest, a].sort((x, y) => Number(y.is_default) - Number(x.is_default)));
+          setPicked(a.id);
+        }}
+      />
     </section>
   );
 }

@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, Table
 import { skuLabel } from '@/lib/sku';
 import { cn } from '@/lib/utils';
 import { BackLink } from './Products';
+import { AddressLines } from '../components/address';
 
 export const STATUS_LABEL: Record<OrderStatus, string> = {
   pending: '待處理',
@@ -120,6 +121,12 @@ export function OrderDetailPage() {
             <StatusBadge status={o.status} />
           </CardAction>
         </CardHeader>
+        {o.shipping_address && (
+          <CardContent>
+            <h2 className="mb-1.5 text-sm font-medium text-muted-foreground">收貨地址</h2>
+            <AddressLines a={o.shipping_address} />
+          </CardContent>
+        )}
         <CardContent>
           <Table>
             <TableHeader>

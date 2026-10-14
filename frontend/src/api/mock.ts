@@ -2,6 +2,7 @@ import { lineTotal, subtotal } from './money';
 import { DEMO_USERS, type SeedUser, seedProducts, syncVariantTotals, withVariants } from './seed';
 import {
   ApiRequestError,
+  type Address,
   type AuthToken,
   type Cart,
   type Order,
@@ -12,6 +13,7 @@ import {
   type ShopApi,
 } from './types';
 import { tokenStore } from './token';
+import { MAX_ADDRESSES, normalisePhone, validateAddress } from '../lib/address';
 
 interface StoredCartLine {
   id: string;
@@ -25,6 +27,8 @@ export interface MockState {
   products: Product[];
   carts: Record<string, StoredCartLine[]>;
   orders: Record<string, Order[]>;
+  /** #29: saved delivery addresses per user (absent in older saved data). */
+  addresses?: Record<string, Address[]>;
   idempotency: Record<string, string>;
   /** Normalised body per idempotency key (CONTRACT.md §10). */
   idempotency_body?: Record<string, string>;
@@ -60,8 +64,18 @@ const TOKEN_TTL_MS = 60 * 60 * 1000;
 const PAGE_SIZE = 8;
 const MAX_QTY = 99;
 
+function seedAddresses(): Record<string, Address[]> {
+  const at = new Date(Date.UTC(2026, 8, 1)).toISOString();
+  return {
+    u_demo: [
+      { id: 'addr_home', recipient: '陳小明', phone: '91234567', region: '九龍', line1: '旺角彌敦道 688 號 12 樓 B 室', is_default: true, created_at: at },
+      { id: 'addr_office', recipient: '陳小明', phone: '23456789', region: '香港島', line1: '中環皇后大道中 99 號 30 樓', is_default: false, created_at: at },
+    ],
+  };
+}
+
 export function freshState(): MockState {
-  return { users: DEMO_USERS.map((u) => ({ ...u })), products: seedProducts(), carts: {}, orders: {}, idempotency: {}, sessions: {}, seq: 1000 };
+  return { users: DEMO_USERS.map((u) => ({ ...u })), products: seedProducts(), carts: {}, orders: {}, addresses: seedAddresses(), idempotency: {}, sessions: {}, seq: 1000 };
 }
 
 const err = (status: number, code: string, message: string) => new ApiRequestError(status, code, message);
@@ -100,6 +114,8 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
   function save() {
     if (opts.persist) globalThis.localStorage?.setItem(STORAGE_KEY, JSON.stringify({ ...state, sessions: {} }));
   }
+  const addressesOf = (uid: string) => ((state.addresses ??= {})[uid] ??= []);
+  const sortAddresses = (xs: Address[]) => [...xs].sort((a, b) => Number(b.is_default) - Number(a.is_default));
   const id = (prefix: string) => `${prefix}_${(++state.seq).toString(36)}`;
 
   async function run<T>(fn: () => T): Promise<T> {
@@ -305,6 +321,10 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
         }
         const cart = cartOf(u.id);
         if (!cart.items.length) throw err(422, 'CART_EMPTY', '購物車是空的');
+        // #29: a delivery address is required and snapshotted onto the order.
+        if (!body.address_id) throw err(422, 'ADDRESS_REQUIRED', '請選擇收貨地址');
+        const addr = addressesOf(u.id).find((a) => a.id === body.address_id);
+        if (!addr) throw err(404, 'ADDRESS_NOT_FOUND', '找不到收貨地址');
         if ((state.carts[u.id] ?? []).some(isUnavailable)) throw err(409, 'PRODUCT_UNAVAILABLE', '部分商品已無法購買');
         for (const it of cart.items) {
           const p = findProduct(it.product.id, true);
@@ -325,6 +345,7 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
         const order: Order = {
           id: id('ord'),
           status: 'pending',
+          shipping_address: { recipient: addr.recipient, phone: addr.phone, region: addr.region, line1: addr.line1 },
           currency: cart.items[0].product.currency,
           items: cart.items.map((it) => ({ product_id: it.product.id, sku_id: it.sku?.id ?? null, sku_options: it.sku?.options ?? null, name: it.product.name, unit_price_cents: it.product.price_cents, quantity: it.quantity, line_total_cents: it.line_total_cents })),
           total_cents: cart.subtotal_cents,
@@ -342,6 +363,21 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
         const o = (state.orders[currentUser().id] ?? []).find((x) => x.id === oid);
         if (!o) throw err(404, 'NOT_FOUND', '找不到訂單');
         return o;
+      }),
+    listAddresses: () => run(() => sortAddresses(addressesOf(currentUser().id))),
+    createAddress: (input) =>
+      run(() => {
+        const u = currentUser();
+        const errors = validateAddress(input);
+        const first = Object.values(errors)[0];
+        if (first) throw err(422, 'VALIDATION_ERROR', first);
+        const list = addressesOf(u.id);
+        if (list.length >= MAX_ADDRESSES) throw err(422, 'ADDRESS_LIMIT', `最多只可儲存 ${MAX_ADDRESSES} 個地址`);
+        const makeDefault = !!input.is_default || list.length === 0;
+        if (makeDefault) for (const a of list) a.is_default = false;
+        const a: Address = { id: id('addr'), recipient: input.recipient.trim(), phone: normalisePhone(input.phone), region: input.region, line1: input.line1.trim(), is_default: makeDefault, created_at: new Date(now()).toISOString() };
+        list.push(a);
+        return a;
       }),
     createProduct: (input) =>
       run(() => {
