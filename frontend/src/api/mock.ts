@@ -31,7 +31,7 @@ export interface MockState {
 export interface MockOptions {
   /** [min, max] artificial latency in ms. */
   latency?: [number, number];
-  /** Persist state to localStorage (browser). */
+  /** Persist demo data (products, carts, orders; never tokens or sessions) to localStorage. */
   persist?: boolean;
   /** Supplies the bearer token; defaults to the shared token store. */
   getToken?: () => string | null;
@@ -60,7 +60,8 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
       const raw = globalThis.localStorage?.getItem(STORAGE_KEY);
       if (raw) {
         try {
-          return JSON.parse(raw) as MockState;
+          // Sessions are never persisted, so a reload signs the user out (same as real mode).
+          return { ...(JSON.parse(raw) as MockState), sessions: {} };
         } catch {
           /* fall through to a fresh seed */
         }
@@ -69,7 +70,7 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
     return freshState();
   }
   function save() {
-    if (opts.persist) globalThis.localStorage?.setItem(STORAGE_KEY, JSON.stringify(state));
+    if (opts.persist) globalThis.localStorage?.setItem(STORAGE_KEY, JSON.stringify({ ...state, sessions: {} }));
   }
   const id = (prefix: string) => `${prefix}_${(++state.seq).toString(36)}`;
 

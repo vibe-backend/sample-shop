@@ -19,7 +19,7 @@ Other scripts:
 | `npm run lint` | ESLint plus a TypeScript typecheck |
 | `npm run typecheck` | TypeScript only |
 | `npm test` | Vitest unit tests (mock adapter and cart math) |
-| `npm run build` | Production build into `dist/` (base path `/sample-shop/`) |
+| `npm run build` | Production build into `dist/` (base path `/sample-shop/`); requires `VITE_API_MODE` |
 | `npm run preview` | Serve the production build |
 
 ## Mock vs real API
@@ -28,12 +28,19 @@ The whole app talks to one typed `ShopApi` interface (`src/api/types.ts`), which
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `VITE_API_MODE` | `mock` | `mock` uses the in-browser adapter; `real` uses fetch |
+| `VITE_API_MODE` | `mock` in dev; **required** for builds | `mock` uses the in-browser adapter; `real` uses fetch |
 | `VITE_API_BASE_URL` | `http://localhost:8080` | Backend origin, used only when `real` |
 | `VITE_SHOP_SLUG` | `main` | The `{slug}` shop constant in catalog paths |
 | `VITE_BASE` | `/sample-shop/` | Base path for `npm run build` (dev always uses `/`) |
 
-To switch to the real backend, copy `.env.example` to `.env.local` and set:
+`npm run build` fails unless `VITE_API_MODE` is set to `mock` or `real`, so a production deploy can't silently ship mock mode with its demo accounts:
+
+```sh
+VITE_API_MODE=real VITE_API_BASE_URL=https://your-backend.example npm run build
+VITE_API_MODE=mock npm run build   # demo build, as used by the GitHub Pages workflow
+```
+
+To switch the dev server to the real backend, copy `.env.example` to `.env.local` and set:
 
 ```sh
 VITE_API_MODE=real
@@ -45,7 +52,7 @@ The real adapter (`src/api/real.ts`) is written against the contract but has not
 ### Mock mode
 
 - Seed data lives in `src/api/seed.ts`: 13 products, one of them inactive. Product images are generated placeholder SVGs.
-- State (users, carts, orders, stock) is saved in `localStorage`. Use **重設示範資料** in the banner to reset it.
+- Demo data (users, carts, orders, stock) is saved in `localStorage`. Use **重設示範資料** in the banner to reset it. Sessions are not saved, so a reload signs you out, the same as in real mode.
 - Each call waits 150–450 ms to imitate network latency.
 - Errors use the contract shape `{code, message}`, for example `401 INVALID_CREDENTIALS`, `401 UNAUTHENTICATED`, `403 FORBIDDEN`, `409 OUT_OF_STOCK`, `409 EMAIL_TAKEN`, `422 CART_EMPTY`.
 
@@ -57,6 +64,12 @@ The real adapter (`src/api/real.ts`) is written against the contract but has not
 | Staff (`roles: ["staff"]`) | `staff@example.com` | `staff1234` |
 
 You can also register a new account; it is stored only in your browser.
+
+## Access token handling
+
+In both modes the access token is kept **in memory only** (`src/api/token.ts`). It is never written to `localStorage` or `sessionStorage`, so injected script cannot read it from storage. After a reload the user signs in again. On startup the app also deletes any `shop.token` that an earlier build left in `localStorage`.
+
+For production, pair this with a refresh token in an `httpOnly; Secure; SameSite` cookie and a refresh endpoint, so a reload can quietly get a new access token. The contract doesn't define a refresh endpoint yet, so this frontend doesn't implement that step.
 
 ## Pages
 
