@@ -51,3 +51,27 @@ describe('real adapter payOrder (#30)', () => {
     expect(JSON.parse(init.body)).toEqual({ method: 'mock_card', simulate: 'failure' });
   });
 });
+
+describe('real adapter payOrder — CONTRACT.md §13 @a3d4304', () => {
+  it('returns the paid order on 200', async () => {
+    const paid = { ...order, status: 'paid', payment_method: 'mock_card', paid_at: '2026-10-14T11:00:00Z' };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json(200, paid)));
+    await expect(createRealApi('http://x', 'main').payOrder('ord_1', { method: 'mock_card', simulate: 'success' }, 'k')).resolves.toMatchObject({ status: 'paid', payment_method: 'mock_card' });
+  });
+  it('retries 503 TX_CONFLICT with the same key', async () => {
+    setRetrySleep(async () => {});
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(json(503, { error: { code: 'TX_CONFLICT', message: 'busy' } }, { 'Retry-After': '1' }))
+      .mockResolvedValueOnce(json(200, { ...order, status: 'paid' }));
+    vi.stubGlobal('fetch', fetch);
+    await createRealApi('http://x', 'main').payOrder('ord_1', { method: 'mock_alipay', simulate: 'success' }, 'same');
+    expect(fetch.mock.calls.map(([, i]) => i.headers['Idempotency-Key'])).toEqual(['same', 'same']);
+  });
+  it('surfaces 409 IDEMPOTENCY_KEY_REUSED / ORDER_NOT_PAYABLE without retrying', async () => {
+    const fetch = vi.fn().mockResolvedValue(json(409, { error: { code: 'IDEMPOTENCY_KEY_REUSED', message: 'reused' } }));
+    vi.stubGlobal('fetch', fetch);
+    await expect(createRealApi('http://x', 'main').payOrder('ord_1', { method: 'mock_card', simulate: 'success' }, 'k')).rejects.toMatchObject({ status: 409, code: 'IDEMPOTENCY_KEY_REUSED' });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+});

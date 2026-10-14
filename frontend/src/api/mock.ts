@@ -388,20 +388,28 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
       }),
     payOrder: (oid, pay, key) =>
       run(() => {
+        // CONTRACT.md §13 @a3d4304 check order: order exists → replay → validation → pending → simulate.
         const u = currentUser();
         if (!key) throw err(400, 'IDEMPOTENCY_KEY_REQUIRED', '缺少 Idempotency-Key');
         const o = (state.orders[u.id] ?? []).find((x) => x.id === oid);
         if (!o) throw err(404, 'NOT_FOUND', '找不到訂單');
         const ik = `${u.id}:pay:${key}`;
-        // A replayed successful payment returns the order as-is.
-        if (state.idempotency[ik] === o.id && o.status === 'paid') return o;
+        const hash = stableStringify(pay);
+        const prev = state.idempotency[ik];
+        if (prev) {
+          // §10/§13: only successful payments keep the key.
+          if (prev !== o.id || state.idempotency_body?.[ik] !== hash) throw err(409, 'IDEMPOTENCY_KEY_REUSED', '此 Idempotency-Key 已用於另一個請求');
+          return o;
+        }
         if (pay.method !== 'mock_card' && pay.method !== 'mock_alipay') throw err(422, 'VALIDATION_FAILED', '付款方式無效');
+        if (pay.simulate !== 'success' && pay.simulate !== 'failure') throw err(422, 'VALIDATION_FAILED', '模擬結果無效');
         if (o.status !== 'pending') throw err(409, 'ORDER_NOT_PAYABLE', o.status === 'paid' ? '此訂單已付款' : '此訂單不可付款');
         if (pay.simulate === 'failure') throw err(402, 'PAYMENT_DECLINED', '付款失敗（模擬），請重試或更換付款方式');
-        o.payment_method = pay.method;
         o.status = 'paid';
+        o.payment_method = pay.method;
         o.paid_at = new Date(now()).toISOString();
         state.idempotency[ik] = o.id;
+        (state.idempotency_body ??= {})[ik] = hash;
         return o;
       }),
     listAddresses: () => run(() => sortAddresses(addressesOf(currentUser().id))),

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { CircleCheck } from 'lucide-react';
 import { api, formatPrice, type Order, type OrderStatus } from '../api';
@@ -181,26 +181,48 @@ export function OrderDetailPage() {
 }
 
 /** Simulated payment page (#30): choose a demo method, then force success or failure. */
+/** A payment error that ends this attempt for sure (vs. timeouts / conflicts that may have succeeded server-side). */
+const isDefinitive = (e: unknown) => e instanceof ApiRequestError && e.status >= 400 && e.status < 500 && e.status !== 409 && e.status !== 408;
+
 export function PayPage() {
   const { id = '' } = useParams();
   const [params] = useSearchParams();
   const nav = useNavigate();
-  const [o, error, loading] = useAsync(() => api.getOrder(id), [id]);
+  const [o, error, loading, reload] = useAsync(() => api.getOrder(id), [id]);
   const [picked, setPicked] = useState<PaymentMethod | null>(null);
   const [busy, setBusy] = useState(false);
   const [payErr, setPayErr] = useState<unknown>(null);
+  // One Idempotency-Key per payment attempt: reused for retries after an uncertain error,
+  // replaced after a definitive failure or when the method changes (CONTRACT.md §10/§13 @a3d4304).
+  const keyRef = useRef<string | null>(null);
+  const errRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (payErr) errRef.current?.focus();
+  }, [payErr]);
   if (loading) return <Spinner />;
   if (!o) return <ErrorNote error={error} />;
   const fromCheckout = params.get('method');
   const method: PaymentMethod = picked ?? (fromCheckout === 'mock_alipay' || fromCheckout === 'mock_card' ? fromCheckout : 'mock_card');
 
+  function changeMethod(m: PaymentMethod) {
+    if (m !== method) keyRef.current = null;
+    setPicked(m);
+  }
+
   async function pay(simulate: 'success' | 'failure') {
     setBusy(true);
     setPayErr(null);
+    keyRef.current ??= crypto.randomUUID();
     try {
-      await api.payOrder(o!.id, { method, simulate }, crypto.randomUUID());
+      await api.payOrder(o!.id, { method, simulate }, keyRef.current);
       nav(`/orders/${o!.id}?paid=1`, { replace: true });
     } catch (e) {
+      if (isDefinitive(e)) keyRef.current = null;
+      // 409 (already paid / key reused): the server state moved on — reload the order.
+      if (e instanceof ApiRequestError && e.status === 409) {
+        keyRef.current = null;
+        reload();
+      }
       setPayErr(e);
       setBusy(false);
     }
@@ -236,14 +258,21 @@ export function PayPage() {
           </CardAction>
         </CardHeader>
         <CardContent className="grid gap-4">
-          <PaymentPicker value={method} onChange={setPicked} />
+          <PaymentPicker value={method} onChange={changeMethod} />
           <p className="rounded-lg bg-muted p-3 text-xs text-muted-foreground">示範付款：不會收取真實款項，亦毋須輸入卡號。請選擇模擬結果。</p>
-          {declined ? (
-            <div role="alert" className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
-              付款失敗（模擬）。訂單仍為「待付款」，你可以重試或更換付款方式。
+          <p className="sr-only" role="status" aria-live="polite">
+            {busy ? '處理中…' : ''}
+          </p>
+          {payErr != null && (
+            <div ref={errRef} tabIndex={-1} className="outline-none">
+              {declined ? (
+                <div role="alert" className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+                  付款失敗（模擬）。訂單仍為「待付款」，你可以重試或更換付款方式。
+                </div>
+              ) : (
+                <ErrorNote error={payErr} />
+              )}
             </div>
-          ) : (
-            <ErrorNote error={payErr} />
           )}
           <div className="grid gap-2 sm:grid-cols-2">
             <Button size="lg" className="h-11" onClick={() => pay('success')} disabled={busy}>

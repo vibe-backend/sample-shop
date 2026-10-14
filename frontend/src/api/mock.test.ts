@@ -307,6 +307,11 @@ describe('mock payment (#30)', () => {
     expect(paid.paid_at).toBeTruthy();
     // replay with the same key returns the paid order; a new key is rejected
     expect((await api.payOrder(o.id, { method: 'mock_alipay', simulate: 'success' }, 'k2')).status).toBe('paid');
+    // §13 @a3d4304: same key with a different body or order → 409
+    await expectCode(api.payOrder(o.id, { method: 'mock_card', simulate: 'success' }, 'k2'), 409, 'IDEMPOTENCY_KEY_REUSED');
+    await api.addCartItem('p_007', 1);
+    const o2 = await api.createOrder('pay-1b', A);
+    await expectCode(api.payOrder(o2.id, { method: 'mock_alipay', simulate: 'success' }, 'k2'), 409, 'IDEMPOTENCY_KEY_REUSED');
     await expectCode(api.payOrder(o.id, { method: 'mock_card', simulate: 'success' }, 'k3'), 409, 'ORDER_NOT_PAYABLE');
   });
   it('validates key, order and method', async () => {
@@ -315,5 +320,10 @@ describe('mock payment (#30)', () => {
     await expectCode(api.payOrder(o.id, { method: 'mock_card', simulate: 'success' }, ''), 400, 'IDEMPOTENCY_KEY_REQUIRED');
     await expectCode(api.payOrder('nope', { method: 'mock_card', simulate: 'success' }, 'k'), 404, 'NOT_FOUND');
     await expectCode(api.payOrder(o.id, { method: 'cash' as never, simulate: 'success' }, 'k'), 422, 'VALIDATION_FAILED');
+    await expectCode(api.payOrder(o.id, { method: 'mock_card', simulate: 'maybe' as never }, 'k'), 422, 'VALIDATION_FAILED');
+    // failure writes nothing and keeps the key reusable
+    await expectCode(api.payOrder(o.id, { method: 'mock_card', simulate: 'failure' }, 'kf'), 402, 'PAYMENT_DECLINED');
+    expect(await api.getOrder(o.id)).toMatchObject({ status: 'pending', payment_method: null, paid_at: null });
+    expect((await api.payOrder(o.id, { method: 'mock_card', simulate: 'success' }, 'kf')).status).toBe('paid');
   });
 });

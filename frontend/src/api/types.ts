@@ -181,10 +181,10 @@ export interface AddressInput {
 /** Copied onto the order at placement; later address-book edits never change it. */
 export type AddressSnapshot = Pick<Address, 'recipient' | 'phone' | 'region' | 'line1'>;
 
-/** #30 (not yet in CONTRACT.md): demo payment methods; no real money moves. */
+/** CONTRACT.md §13 @a3d4304: demo payment methods; no real money moves. */
 export type PaymentMethod = 'mock_card' | 'mock_alipay';
 
-/** #30 (not yet in CONTRACT.md): POST /shop/v1/orders/{id}/payments body. */
+/** §13 @a3d4304: POST /shop/v1/orders/{id}/payments body (both fields validated → 422 VALIDATION_FAILED). */
 export interface PaymentInput {
   method: PaymentMethod;
   /** Demo only: forces the simulated gateway result. */
@@ -194,10 +194,10 @@ export interface PaymentInput {
 export interface Order {
   id: string;
   status: OrderStatus;
-  /** #30 (not yet in CONTRACT.md): method of the last successful payment. */
-  payment_method?: PaymentMethod | null;
-  /** #30 (not yet in CONTRACT.md): ISO 8601 UTC time the order was paid. */
-  paid_at?: string | null;
+  /** §13 @a3d4304: always present; null until paid. */
+  payment_method: PaymentMethod | null;
+  /** §13 @a3d4304: ISO 8601 UTC; always present, null until paid. */
+  paid_at: string | null;
   /** §12 @42a33ae: snapshot written at order time; null/absent only for legacy orders placed before addresses existed. */
   shipping_address?: AddressSnapshot | null;
   items: OrderItem[];
@@ -232,8 +232,8 @@ export interface ShopApi {
   listOrders(cursor?: string): Promise<Page<Order>>;
   getOrder(id: string): Promise<Order>;
   /**
-   * #30 (not yet in CONTRACT.md): simulated payment for a pending order. Success → status `paid`;
-   * failure → 402 PAYMENT_DECLINED and the order stays `pending` (retryable).
+   * §13 @a3d4304: simulated payment for a pending order. Success → 200 `paid`; failure → 402
+   * PAYMENT_DECLINED, nothing written, key not kept. Same key + different order/body → 409 IDEMPOTENCY_KEY_REUSED.
    */
   payOrder(orderId: string, p: PaymentInput, idempotencyKey: string): Promise<Order>;
   /** §2 #17 / §12 @42a33ae: GET /shop/v1/addresses → Address[] (not paged), default first, then newest first. */
