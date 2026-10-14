@@ -12,9 +12,10 @@
 
 ## 做法
 - 以參數化 SQL 查詢 products，條件為 active = true 且未被刪除，再套用上述篩選與排序，取 limit + 1 筆以判斷是否還有下一頁。
+- 一併查詢這些商品的 active 規格，依 product 的「規格與彙總」規則計算 price_cents、stock、in_stock；價格篩選與價格排序使用計算後的 price_cents。
 
 ## 輸出
-- items：每筆含 id、slug、name、description、category、price_cents、currency、image_urls、stock、in_stock（stock > 0）、active。
+- items：每筆含 id、slug、name、description、category、price_cents、currency、image_urls、stock、in_stock、active、created_at、options、variants（每筆含 id、options、price_cents、stock、in_stock、image_url）。
 - next_cursor：若還有下一頁則為字串，否則為 null。
 
 此 method 只讀取資料（writes: false）。

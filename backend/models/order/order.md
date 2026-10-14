@@ -9,6 +9,9 @@
 - currency：字串，必填，3 個大寫字母。
 - idempotency_key：字串，選填，最長 64 字。
 
+## 輸出
+- get 一併回傳 items（order_items 快照，欄位同 order-item）。
+
 ## 擁有權
 - owner-key 為 `user_id`：使用者只能讀取自己的訂單。
 

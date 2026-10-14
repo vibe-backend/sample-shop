@@ -2,20 +2,26 @@
 
 以目前使用者的購物車建立訂單。
 
+## 交易規則
+- 整個請求在 runtime 提供的單一交易中執行，隔離等級 READ COMMITTED；SQL 中不得出現 BEGIN、COMMIT、ROLLBACK 或 SAVEPOINT。
+- 寫入依固定順序進行，並在 SET LOCAL ROLE 之下執行；不跨請求、不跨資料庫、不使用分散式交易。
+- 逾時：單一 SQL 5 秒、整個交易 10 秒、交易中閒置 5 秒；逾時時交易回滾並回 `TX_TIMEOUT`。
+- 發生死結（40P01）或序列化失敗（40001）時交易回滾並回 `TX_CONFLICT`（可重試）；平台不自動重試此寫入。
+
 ## 輸入
 - idempotency_key（選填，字串，最長 64 字）。
 
-## 做法（同一個 transaction）
+## 做法（依此固定順序）
 1. 若有 idempotency_key，先查詢此使用者是否已有相同 key 的訂單；若有，直接回傳該訂單，不重複建立。
-2. 查詢購物車（cart_items 關聯 products，user_id = ctx.user.id）；若為空回 `CART_EMPTY`。
-3. 任一商品 inactive 回 `PRODUCT_UNAVAILABLE`；任一商品 stock 小於 quantity 回 `OUT_OF_STOCK`。
-4. 新增 orders 一列：status 為 pending、total_cents 為各品項 unit_price_cents × quantity 的總和、currency、idempotency_key。
-5. 逐項新增 order_items 快照（product_name、unit_price_cents、quantity、line_total_cents）。
-6. 扣減 products.stock（以主鍵限定）。
+2. 查詢購物車（cart_items，user_id = ctx.user.id、未刪除），關聯 products 與 product_variants；若為空回 `CART_EMPTY`。
+3. 任一商品或所選規格已 inactive 或刪除，回 `PRODUCT_UNAVAILABLE`。
+4. 扣減庫存：有 sku_id 的品項以 `UPDATE product_variants SET stock = stock - 數量 WHERE id = sku_id AND stock >= 數量`，沒有規格的品項以同樣方式更新 products；依 sku_id／product_id 由小到大的順序逐筆執行，並檢查影響列數，任一筆為 0 即回 `OUT_OF_STOCK`（整個交易回滾）。
+5. 新增 orders 一列：status 為 pending、total_cents 為各品項單價 × 數量的總和、currency、idempotency_key。
+6. 逐項新增 order_items 快照：product_id、sku_id、sku_options、name、unit_price_cents（有規格時為規格價格）、quantity、line_total_cents。
 7. 軟刪除此使用者所有 cart_items（清空購物車）。
 8. 回傳訂單 id、status、items、total_cents、currency、created_at。
 
 ## 錯誤
-- CART_EMPTY、PRODUCT_UNAVAILABLE、OUT_OF_STOCK。
+- CART_EMPTY、PRODUCT_UNAVAILABLE、OUT_OF_STOCK、TX_TIMEOUT、TX_CONFLICT。
 
-此 method 會寫入資料（writes: true），並會寫入 order-item、product、cart-item（應經由各自的 method）。
+此 method 會寫入資料（writes: true），寫入 product、product-variant、order、order-item、cart-item（應經由各自的 method）。

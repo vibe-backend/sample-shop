@@ -5,13 +5,18 @@
 ## 欄位
 - slug：字串，必填，唯一，只允許 a-z0-9-，最長 80 字。
 - name：字串，必填，最長 120 字。
-- description：字串，選填，最長 4000 字。
+- description：字串，選填，最長 4000 字，預設空字串（不回傳 null）。
 - category：字串，必填，最長 40 字。
 - price_cents：整數，必填，最小 0。
 - currency：字串，必填，固定 3 個大寫字母（例如 TWD），預設 TWD。
 - image_urls：字串陣列，選填，最多 10 個網址。
 - stock：整數，必填，最小 0，預設 0。
 - active：布林，必填，預設 true。
+- options：json 類型，選填；內容為規格群組陣列，每個元素含 name（字串，最長 20 字）與 values（字串陣列，1 至 20 個，每個最長 20 字），最多 3 組。例如 [{name: 顏色, values: [黑色, 米白]}]。空陣列或缺少代表此商品沒有規格。
+
+## 規格與彙總
+- 規格（SKU）存在 product-variant model。
+- 商品有規格時，對外輸出的 price_cents 為「active 的規格中最低的 price_cents」，stock 為「active 的規格 stock 總和」，in_stock 為 stock > 0；資料表中 price_cents 與 stock 欄位此時不作為對外依據。
 
 ## CRUD
 - create、get、update（以 If-Match 樂觀鎖）、delete（軟刪除）。

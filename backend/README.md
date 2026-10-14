@@ -5,7 +5,7 @@
 ```text
 backend/
 ├── providers/main.md            # PostgreSQL
-├── models/                      # user、product、cart-item、order、order-item 與其 methods
+├── models/                      # user、product、product-variant、cart-item、order、order-item 與其 methods
 ├── api/
 │   ├── users/v1/                # register、login、me
 │   ├── catalog/v1/              # 商品列表／詳情（公開）、店員 CRUD
@@ -28,7 +28,7 @@ backend/
 | `PUT /catalog/v1/{slug}/products/{id}` | JWT `roles: [staff]` | `If-Match` + 部分欄位 | 200 `Product` |
 | `DELETE /catalog/v1/{slug}/products/{id}` | JWT `roles: [staff]` | — | 204 |
 | `GET /shop/v1/cart-items` | JWT | — | 200 `{items, subtotal_cents}` |
-| `POST /shop/v1/cart-items` | JWT | `product_id`, `quantity` | 200 `Cart`（同商品累加） |
+| `POST /shop/v1/cart-items` | JWT | `product_id`, `sku_id`, `quantity` | 200 `Cart`（同商品同規格累加） |
 | `PUT /shop/v1/cart-items/{id}` | JWT | `quantity` | 200 `Cart` |
 | `DELETE /shop/v1/cart-items/{id}` | JWT | — | 200 `Cart` |
 | `POST /shop/v1/orders` | JWT | `Idempotency-Key` | 201 `Order`，清空購物車 |

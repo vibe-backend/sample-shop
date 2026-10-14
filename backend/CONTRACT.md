@@ -27,41 +27,68 @@
 | 2 | `POST /users/v1/{slug}/login` | 公開（IP 每分鐘 10 次） | body `email`, `password` | 200 `AuthToken` | 401 `INVALID_CREDENTIALS` |
 | 3 | `GET /users/v1/me` | JWT | — | 200 `Me` | 401 |
 | 4 | `GET /catalog/v1/{slug}/products` | 公開（IP 每分鐘 600 次） | query `q`, `category`, `min_price_cents`, `max_price_cents`, `sort`(`price`\|`created_at`), `order`(`asc`\|`desc`), `cursor`, `limit`(1–100) | 200 `Page<Product>` | 422 |
-| 5 | `GET /catalog/v1/{slug}/products/{id}` | 公開 | path `id`(uuid) | 200 `Product` | 404 `NOT_FOUND` |
+| 5 | `GET /catalog/v1/{slug}/products/{id}` | 公開 | path `id`(uuid) | 200 `Product`（含 `options`、`variants`） | 404 `NOT_FOUND` |
 | 6 | `GET /catalog/v1/{slug}/staff/products` | JWT，`roles: [staff]` | query `category`, `active`, `cursor`, `limit` | 200 `Page<Product>`（含下架商品） | 403 |
 | 7 | `POST /catalog/v1/{slug}/products` | JWT，`roles: [staff]` | body `ProductInput` | 201 `Product` + `Location` | 409 `CONFLICT`（slug 重複）、422 |
-| 8 | `PUT /catalog/v1/{slug}/products/{id}`（前端為 PATCH，見 §5） | JWT，`roles: [staff]` | `If-Match`；body 部分 `ProductInput` | 200 `Product` | 404、412、428、422 |
+| 8 | `PUT /catalog/v1/{slug}/products/{id}` | JWT，`roles: [staff]` | `If-Match`；body 部分 `ProductInput` | 200 `Product` | 404、412、428、422 |
 | 9 | `DELETE /catalog/v1/{slug}/products/{id}` | JWT，`roles: [staff]` | — | 204（軟刪除） | 404 |
 | 10 | `GET /shop/v1/cart-items` | JWT（本人） | — | 200 `Cart` | 401 |
-| 11 | `POST /shop/v1/cart-items` | JWT（本人） | body `product_id`, `quantity` | 200 `Cart`（同商品累加數量） | 404 `PRODUCT_NOT_FOUND`、409 `OUT_OF_STOCK`、422 `QUANTITY_LIMIT` |
-| 12 | `PUT /shop/v1/cart-items/{id}`（前端為 PATCH，見 §5） | JWT（本人） | body `quantity` | 200 `Cart` | 404、422 |
+| 11 | `POST /shop/v1/cart-items` | JWT（本人） | body `product_id`, `sku_id`（商品有規格時必填）, `quantity` | 200 `Cart`（`product_id` 與 `sku_id` 都相同才累加） | 404 `PRODUCT_NOT_FOUND`、404 `SKU_NOT_FOUND`、422 `SKU_REQUIRED`、409 `OUT_OF_STOCK`（依規格）、422 `QUANTITY_LIMIT` |
+| 12 | `PUT /shop/v1/cart-items/{id}` | JWT（本人） | body `quantity` | 200 `Cart` | 404、404 `SKU_NOT_FOUND`、409 `OUT_OF_STOCK`（依規格）、422 |
 | 13 | `DELETE /shop/v1/cart-items/{id}` | JWT（本人） | — | 200 `Cart` | 404 |
-| 14 | `POST /shop/v1/orders` | JWT（本人） | header `Idempotency-Key`（建議必帶）；body `{}`（不含地址、付款欄位） | 201 `Order` + `Location`；成功後清空購物車 | 422 `CART_EMPTY`、409 `OUT_OF_STOCK`、409 `PRODUCT_UNAVAILABLE` |
-| 15 | `GET /shop/v1/orders` | JWT（本人） | query `cursor`, `limit` | 200 `Page<OrderSummary>`（新到舊） | 401 |
+| 14 | `POST /shop/v1/orders` | JWT（本人） | header `Idempotency-Key`（建議必帶）；body `{}`（不含地址、付款欄位） | 201 `Order` + `Location`；成功後清空購物車 | 422 `CART_EMPTY`、409 `OUT_OF_STOCK`、409 `PRODUCT_UNAVAILABLE`、504 `TX_TIMEOUT`、503 `TX_CONFLICT` |
+| 15 | `GET /shop/v1/orders` | JWT（本人） | query `cursor`, `limit` | 200 `Page<Order>`（新到舊，含 items） | 401 |
 | 16 | `GET /shop/v1/orders/{id}` | JWT（本人） | path `id` | 200 `Order` | 404（不存在或非本人） |
 
 ## 3. 資料型別
 
 ```ts
+// 與前端 sample-shop PR #60 frontend/src/api/types.ts 一致
 type AuthToken = { access_token: string; expires_at: string }; // 不發 refresh token
 type Me = { id: string; email: string; display_name: string; roles: string[] };
+
+type SkuOptions = Record<string, string>;            // 規格名稱 → 值，例如 { 顏色: '黑色', 尺寸: '大' }
+type ProductOption = { name: string; values: string[] };
+type ProductVariant = {
+  id: string;                 // sku_id
+  options: SkuOptions;
+  price_cents: number;
+  stock: number;
+  in_stock: boolean;
+  image_url?: string | null;
+};
 type Product = {
-  id: string; slug: string; name: string; description: string | null; category: string;
-  price_cents: number; currency: string; image_urls: string[];
-  stock: number; in_stock: boolean; active: boolean; created_at: string;
+  id: string; slug: string; name: string; description: string; category: string;
+  price_cents: number;        // 有規格時 = active 規格中的最低價
+  currency: string; image_urls: string[];
+  stock: number;              // 有規格時 = active 規格 stock 總和
+  in_stock: boolean; active: boolean; created_at: string;
+  options?: ProductOption[];  // 缺少或空陣列 = 沒有規格（後端一律回傳陣列）
+  variants?: ProductVariant[];
 };
 type ProductInput = Omit<Product, 'id' | 'in_stock' | 'created_at'>;
 type Page<T> = { items: T[]; next_cursor: string | null };
-type CartItem = {
-  id: string; product_id: string; quantity: number;
-  product: { name: string; image_url: string | null; unit_price_cents: number; currency: string; in_stock: boolean };
-  line_total_cents: number;
+
+type ProductSummary = {
+  id: string; slug: string; name: string;
+  price_cents: number;        // 有規格時為該規格價格
+  currency: string;
+  image_url: string | null;   // 有規格時優先用規格圖片
+  in_stock: boolean;          // 有規格時依該規格庫存
 };
+type SkuRef = { id: string; options: SkuOptions };
+type CartItem = { id: string; product: ProductSummary; sku?: SkuRef | null; quantity: number; line_total_cents: number };
 type Cart = { items: CartItem[]; subtotal_cents: number };
+
 type OrderStatus = 'pending' | 'paid' | 'shipped' | 'delivered' | 'cancelled';
-type OrderItem = { product_id: string; product_name: string; unit_price_cents: number; quantity: number; line_total_cents: number };
+type OrderItem = {
+  product_id: string;
+  sku_id?: string | null;
+  sku_options?: SkuOptions | null; // 下單當時的規格快照
+  name: string;                    // 下單當時的商品名稱
+  unit_price_cents: number; quantity: number; line_total_cents: number;
+};
 type Order = { id: string; status: OrderStatus; items: OrderItem[]; total_cents: number; currency: string; created_at: string };
-type OrderSummary = Omit<Order, 'items'>;
 ```
 
 ## 4. Token 與刷新策略
@@ -71,18 +98,50 @@ type OrderSummary = Omit<Order, 'items'>;
 - **目前做法（與前端 PR #3 一致）：** 登入／註冊只回 `{access_token, expires_at}`，不發 refresh token；到期或收到 401 時導回登入頁重新登入。
 - 實作後新增 `POST /users/v1/{slug}/refresh`（body `refresh_token`，回 `AuthToken`），與 `POST /users/v1/logout`。
 
+## 4b. 交易與並行（已核准的跨 model 寫入規則）
+
+- 每個請求是一個 runtime 交易；SQL 中不得出現 `BEGIN`／`COMMIT`／`SAVEPOINT`。
+- 隔離等級 READ COMMITTED。扣庫存使用 `UPDATE … SET stock = stock - $qty WHERE id = $id AND stock >= $qty` 並檢查影響列數；不足回 409 `OUT_OF_STOCK`，整筆回滾。
+- 不跨請求、不跨資料庫、不使用分散式交易；寫入依固定順序並在 `SET LOCAL ROLE` 下執行（下單：扣庫存 → 建立訂單 → 品項快照 → 清空購物車；扣庫存依 id 排序以降低死結機率）。
+- 逾時：statement 5s、交易 10s、idle_in_transaction 5s；逾時回滾並回 504 `TX_TIMEOUT`。
+- 死結（40P01）或序列化失敗（40001）：回 503 `TX_CONFLICT`，body 帶 `retryable: true`，header `Retry-After: 1`。非冪等寫入不自動重試；前端重試下單時請沿用同一個 `Idempotency-Key`。
+
+## 4c. 錯誤碼一覽
+
+| 狀態碼 | code | 端點 | 說明 |
+| --- | --- | --- | --- |
+| 401 | `INVALID_CREDENTIALS` | login | 帳號或密碼錯誤 |
+| 404 | `NOT_FOUND` | 多數 | 資源不存在或非本人 |
+| 404 | `PRODUCT_NOT_FOUND` | 加入購物車 | 商品不存在或已下架 |
+| 404 | `SKU_NOT_FOUND` | 加入／修改購物車 | 規格不存在、已停用或不屬於該商品 |
+| 409 | `EMAIL_TAKEN` | register | email 已被使用 |
+| 409 | `CONFLICT` | 新增商品 | slug 重複 |
+| 409 | `OUT_OF_STOCK` | 購物車、下單 | 庫存不足（有規格時依規格） |
+| 409 | `PRODUCT_UNAVAILABLE` | 下單 | 購物車中商品或規格已下架 |
+| 412 / 428 | — | 更新商品 | `If-Match` 不符／缺少 |
+| 422 | `VALIDATION_FAILED` | 全部 | 欄位驗證失敗或未宣告欄位 |
+| 422 | `SKU_REQUIRED` | 加入購物車 | 商品有規格但未提供 `sku_id` |
+| 422 | `QUANTITY_LIMIT` | 加入購物車 | 累加後超過 99 |
+| 422 | `CART_EMPTY` | 下單 | 購物車為空 |
+| 503 | `TX_CONFLICT` | 寫入端點 | 死結或序列化失敗；`retryable: true`、`Retry-After: 1` |
+| 504 | `TX_TIMEOUT` | 寫入端點 | 交易逾時，已回滾 |
+
+`TX_CONFLICT` 的 body：`{ "error": { "code": "TX_CONFLICT", "message": "…", "request_id": "…", "retryable": true } }`（`retryable` 為此錯誤額外欄位；SDK 目前的錯誤格式沒有此欄位 **〔缺口〕**）。
+
 ## 4a. 登入／註冊的實作依賴
 
 - `user.login` 需要 `query`、`verify-password`、`sign-jwt`，`user.register` 需要 `hash-password`。sdk main 的 runtime 尚未能執行這些 op；**需要 sdk PR #77（runtime: executable auth method ops）合併後才能實際運作**。在此之前，端點 1–3 只能通過編譯／驗證，`serve` 無法登入，測試時以本機簽發的 JWT 代替。
 
-## 5. 與前端現況的差異（需確認）
+## 5. 與前端的差異
 
-| 前端現況（`frontend/src/api/real.ts`） | 本契約 | 原因 |
-| --- | --- | --- |
-| `POST /users/v1/login`、`/users/v1/register`（無 slug） | `/users/v1/{slug}/login`、`/register` | spec：公開端點必須由路徑 slug 決定租戶 |
-| `PATCH /shop/v1/cart-items/{id}`、`PATCH …/products/{id}` | **差異：** 後端改用 `PUT`（欄位可部分提供），前端需改方法 | spec v1.7 只允許 GET/POST/PUT/DELETE **〔缺口〕** |
-| 店員列表與公開列表共用 `/products` | 店員改用 `/catalog/v1/{slug}/staff/products` | 公開端點不可帶驗證；同一路由不能同時公開又要求 staff |
-| `DELETE` 購物車回傳 `Cart` | 相同（200 `Cart`） | — |
+前端 PR #60（`feat/sku-variants`）已改為：登入／註冊帶 `{slug}`、更新購物車與商品用 `PUT`、店員列表用 `/catalog/v1/{slug}/staff/products`，先前的差異已消除。
+
+| 項目 | 前端 types.ts | 本契約 | 說明 |
+| --- | --- | --- | --- |
+| `Product.options` / `variants` | 選填 | 後端一律回傳（沒有規格時為空陣列） | 前端以「缺少或空」判斷皆相容 |
+| `Product.description` | `string` | 可能為空字串 | source 中為選填；後端以空字串回傳，不回 null |
+| `ProductInput` 含 `variants` | 由 `Omit<Product,…>` 推得 | 新增／更新商品只接受 `options`；variant 管理端點待定 | 待確認 |
+| 錯誤 body `retryable` | 未定義 | 只在 `TX_CONFLICT` 出現 | 需前端處理 503 重試 |
 
 ## 6. 缺口與 SDK issue
 
@@ -90,9 +149,9 @@ type OrderSummary = Omit<Order, 'items'>;
 | --- | --- | --- |
 | 購物車品項嵌入商品摘要（join／expand） | 以 method SQL 關聯 products 表撰寫；spec 10.8 禁止 query 其他物件的表，驗證可能不通過 **〔缺口〕** | #21 |
 | 同商品累加數量 | 以 `cart-item.add` method 先查再更新／新增 | — |
-| 下單需同一 transaction 寫入 order、order-item、product、cart-item | method 只能經各自 method 寫入，跨物件交易語意未定義 **〔缺口〕** | 待確認 |
+| 下單需同一交易寫入 product／product-variant、order、order-item、cart-item | 依已核准的跨 model 寫入規則（§4b）撰寫；SDK runtime 尚未實作這些交易語意 | — |
 | Idempotency-Key | 以 `orders.idempotency_key` 欄位 + method 先查重模擬；平台層未支援 **〔缺口〕** | #85 |
-| PATCH | 不支援 **〔缺口〕** | #86 |
+| PATCH | 不支援；前端已改用 PUT | #86 |
 | Cursor 分頁、價格區間篩選 | 內建 CRUD 只有 offset 分頁；以自訂 method 撰寫 **〔缺口〕** | #87 |
 | CORS | 不支援 **〔缺口〕** | #84 |
 | 商品關鍵字搜尋 `q` | 以 method SQL `ILIKE` 撰寫 | — |
@@ -112,3 +171,12 @@ type OrderSummary = Omit<Order, 'items'>;
 - 自然語言 source 以 sdk main（`71b4cc1`）+ `gpt-5.5` 編譯 9 次，全部失敗（每次不同檔案出現 LLM 格式錯誤；整批不寫入，sdk #83）。
 - 以子集（product + 兩個 catalog API）編譯可產生 lock，但 `vibe validate` 不通過（LLM 自創 key、欄位表欄位錯位），見 sdk #37。
 - 因此本契約目前**尚未有可執行的後端**；前端請先以 mock（PR #3）開發。
+
+## 9. 規格（SKU）規則（前端 #17／PR #60）
+
+- 商品有 active 規格時：`price_cents` = active 規格最低價，`stock` = active 規格庫存總和，`in_stock` = `stock > 0`。inactive 或已刪除的規格不出現在 `variants`，也不參與計算。
+- 商品沒有規格時：`options`、`variants` 回傳空陣列。
+- 加入購物車：有規格必帶 `sku_id`（否則 422 `SKU_REQUIRED`）；未知或屬於其他商品的 sku 回 404 `SKU_NOT_FOUND`；庫存依規格檢查。
+- 購物車品項只有 `product_id` 與 `sku_id` 都相同時才合併數量。
+- 下單時快照 `sku_id`、`sku_options`、`name`、`unit_price_cents`，並扣減該規格庫存。
+- 規格的店員管理端點（新增／修改 variant）尚未定義，待確認。

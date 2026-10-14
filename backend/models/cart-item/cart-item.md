@@ -5,6 +5,7 @@
 ## 欄位
 - user_id：uuid，必填；由平台以 ctx.user.id 填入，呼叫者不可提供。
 - product_id：uuid，必填，指向 product。
+- sku_id：uuid，選填，指向 product-variant；商品沒有規格時為 null。
 - quantity：整數，必填，最小 1，最大 99。
 
 ## 擁有權

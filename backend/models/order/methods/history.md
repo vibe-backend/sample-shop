@@ -9,7 +9,7 @@
 - 以參數化 SQL 查詢 orders（user_id = ctx.user.id），依 created_at 與 id 由新到舊排序，取 limit + 1 筆判斷是否還有下一頁。
 
 ## 輸出
-- items：每筆含 id、status、total_cents、currency、created_at。
+- items：每筆含 id、status、total_cents、currency、created_at，以及 items（該訂單的品項快照：product_id、sku_id、sku_options、name、unit_price_cents、quantity、line_total_cents）。
 - next_cursor：若還有下一頁則為字串，否則為 null。
 
 此 method 只讀取資料（writes: false）。
