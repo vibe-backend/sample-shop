@@ -36,14 +36,17 @@
 | 11 | `POST /shop/v1/cart-items` | JWT（本人） | body `product_id`, `sku_id`（商品有規格時必填）, `quantity` | 200 `Cart`（`product_id` 與 `sku_id` 都相同才累加） | 404 `PRODUCT_NOT_FOUND`、409 `PRODUCT_UNAVAILABLE`（規格全部停用）、404 `SKU_NOT_FOUND`、422 `SKU_REQUIRED`、409 `OUT_OF_STOCK`（依規格）、422 `QUANTITY_LIMIT` |
 | 12 | `PUT /shop/v1/cart-items/{id}` | JWT（本人） | body `quantity` | 200 `Cart` | 404、404 `SKU_NOT_FOUND`、409 `OUT_OF_STOCK`（依規格）、422 |
 | 13 | `DELETE /shop/v1/cart-items/{id}` | JWT（本人） | — | 200 `Cart` | 404 |
-| 14 | `POST /shop/v1/orders` | JWT（本人） | header `Idempotency-Key`（**必填**，見 §10）；body `{}`（不含地址、付款欄位） | 201 `Order` + `Location`；成功後清空購物車 | 400 `IDEMPOTENCY_KEY_REQUIRED`、409 `IDEMPOTENCY_KEY_REUSED`、422 `CART_EMPTY`、409 `OUT_OF_STOCK`、409 `PRODUCT_UNAVAILABLE`（§11）、504 `TX_TIMEOUT`、503 `TX_CONFLICT` |
+| 14 | `POST /shop/v1/orders` | JWT（本人） | header `Idempotency-Key`（**必填**，見 §10）；body `address_id`（**必填**，見 §12；不含付款欄位） | 201 `Order`（含 `shipping_address`）+ `Location`；成功後清空購物車 | 400 `IDEMPOTENCY_KEY_REQUIRED`、409 `IDEMPOTENCY_KEY_REUSED`、422 `ADDRESS_REQUIRED`、404 `ADDRESS_NOT_FOUND`、422 `CART_EMPTY`、409 `OUT_OF_STOCK`、409 `PRODUCT_UNAVAILABLE`（§11）、504 `TX_TIMEOUT`、503 `TX_CONFLICT` |
 | 15 | `GET /shop/v1/orders` | JWT（本人） | query `cursor`, `limit` | 200 `Page<Order>`（新到舊，含 items） | 401 |
 | 16 | `GET /shop/v1/orders/{id}` | JWT（本人） | path `id` | 200 `Order` | 404（不存在或非本人） |
+| 17 | `GET /shop/v1/addresses` | JWT（本人） | — | 200 `Address[]`（預設排最前，不分頁） | 401 |
+| 18 | `POST /shop/v1/addresses` | JWT（本人） | body `AddressInput` | 201 `Address` + `Location` | 422 `VALIDATION_ERROR`、422 `ADDRESS_LIMIT` |
+| — | `PUT`／`DELETE /shop/v1/addresses/{id}`、`POST /shop/v1/addresses/{id}/default` | JWT（本人） | — | 規劃中（#44），v1 未實作 | — |
 
 ## 3. 資料型別
 
 ```ts
-// 與前端 sample-shop PR #60 frontend/src/api/types.ts 一致
+// 與前端 sample-shop PR #60 frontend/src/api/types.ts 一致；地址相關型別與 sold_count 依 PR #64
 type AuthToken = { access_token: string; expires_at: string }; // 不發 refresh token
 type Me = { id: string; email: string; display_name: string; roles: string[] };
 
@@ -63,10 +66,11 @@ type Product = {
   currency: string; image_urls: string[];
   stock: number;              // 有規格時 = active 規格 stock 總和
   in_stock: boolean; active: boolean; created_at: string;
+  sold_count?: number;        // 後端一律回傳；下單時累加（§12）
   options?: ProductOption[];  // 缺少或空陣列 = 沒有規格（後端一律回傳陣列）
   variants?: ProductVariant[];
 };
-type ProductInput = Omit<Product, 'id' | 'in_stock' | 'created_at'>;
+type ProductInput = Omit<Product, 'id' | 'in_stock' | 'created_at' | 'sold_count'>;
 type Page<T> = { items: T[]; next_cursor: string | null };
 
 type ProductSummary = {
@@ -88,7 +92,17 @@ type OrderItem = {
   name: string;                    // 下單當時的商品名稱
   unit_price_cents: number; quantity: number; line_total_cents: number;
 };
-type Order = { id: string; status: OrderStatus; items: OrderItem[]; total_cents: number; currency: string; created_at: string };
+type Address = {
+  id: string; recipient: string;
+  phone: string;              // 8 位香港號碼，已正規化（無 +852／空白）
+  region: string;             // 香港島 | 九龍 | 新界 | 離島
+  line1: string;              // 詳細地址
+  is_default: boolean; created_at: string;
+};
+type AddressInput = { recipient: string; phone: string; region: string; line1: string; is_default?: boolean };
+type AddressSnapshot = Pick<Address, 'recipient' | 'phone' | 'region' | 'line1'>;
+type CreateOrderInput = { address_id: string };
+type Order = { id: string; status: OrderStatus; shipping_address?: AddressSnapshot | null; items: OrderItem[]; total_cents: number; currency: string; created_at: string };
 ```
 
 ## 4. Token 與刷新策略
@@ -102,7 +116,7 @@ type Order = { id: string; status: OrderStatus; items: OrderItem[]; total_cents:
 
 - 每個請求是一個 runtime 交易；SQL 中不得出現 `BEGIN`／`COMMIT`／`SAVEPOINT`。
 - 隔離等級 READ COMMITTED。扣庫存使用 `UPDATE … SET stock = stock - $qty WHERE id = $id AND stock >= $qty` 並檢查影響列數；不足回 409 `OUT_OF_STOCK`，整筆回滾。
-- 不跨請求、不跨資料庫、不使用分散式交易；寫入依固定順序並在 `SET LOCAL ROLE` 下執行（下單：扣庫存 → 建立訂單 → 品項快照 → 清空購物車；扣庫存依 id 排序以降低死結機率）。
+- 不跨請求、不跨資料庫、不使用分散式交易；寫入依固定順序並在 `SET LOCAL ROLE` 下執行（下單：確認地址 → 扣庫存並累加 sold_count → 建立訂單（含 shipping_address 快照）→ 品項快照 → 清空購物車；扣庫存依 id 排序以降低死結機率）。
 - 逾時：statement 5s、交易 10s、idle_in_transaction 5s；逾時回滾並回 504 `TX_TIMEOUT`。
 - 死結（40P01）或序列化失敗（40001）：回 503 `TX_CONFLICT`，body 帶 `retryable: true`，header `Retry-After: 1`。非冪等寫入不自動重試；前端重試下單時**必須**沿用同一個 `Idempotency-Key`（§10）。
 
@@ -120,10 +134,14 @@ type Order = { id: string; status: OrderStatus; items: OrderItem[]; total_cents:
 | 409 | `PRODUCT_UNAVAILABLE` | 加入購物車、下單 | 商品有規格但全部停用；或下單時購物車中商品／規格已下架。下單時 `details.cart_item_ids` 列出受影響品項（§11） |
 | 400 | `IDEMPOTENCY_KEY_REQUIRED` | 下單 | 未帶 `Idempotency-Key`（§10） |
 | 409 | `IDEMPOTENCY_KEY_REUSED` | 下單 | 同一 key 但 body 不同（§10） |
+| 404 | `ADDRESS_NOT_FOUND` | 下單 | `address_id` 不存在或屬於他人（§12） |
 | 412 / 428 | — | 更新商品 | `If-Match` 不符／缺少 |
 | 422 | `VALIDATION_FAILED` | 全部 | 欄位驗證失敗或未宣告欄位 |
 | 422 | `SKU_REQUIRED` | 加入購物車 | 商品有規格但未提供 `sku_id` |
 | 422 | `QUANTITY_LIMIT` | 加入購物車 | 累加後超過 99 |
+| 422 | `VALIDATION_ERROR` | 新增地址 | 地址欄位驗證失敗（§12；與其他端點的 `VALIDATION_FAILED` 不一致，見 §12） |
+| 422 | `ADDRESS_LIMIT` | 新增地址 | 已有 20 個地址 |
+| 422 | `ADDRESS_REQUIRED` | 下單 | body 缺少 `address_id` |
 | 422 | `CART_EMPTY` | 下單 | 購物車為空 |
 | 503 | `TX_CONFLICT` | 寫入端點 | 死結或序列化失敗；`retryable: true`、`Retry-After: 1` |
 | 504 | `TX_TIMEOUT` | 寫入端點 | 交易逾時，已回滾 |
@@ -191,7 +209,7 @@ type Order = { id: string; status: OrderStatus; items: OrderItem[]; total_cents:
 - `Idempotency-Key` header **必填**（1–64 字，建議 UUID v4）；缺少回 400 `IDEMPOTENCY_KEY_REQUIRED`。
 - 範圍：同一使用者（JWT `sub`）＋同一路由。
 - 同一 key、同一 body：回傳第一次建立的訂單（相同狀態碼 201 與內容），不重複扣庫存、不重複清空購物車。
-- 同一 key、不同 body：回 409 `IDEMPOTENCY_KEY_REUSED`。目前 body 固定為 `{}`，比較依據為 body 的正規化 JSON 雜湊。
+- 同一 key、不同 body：回 409 `IDEMPOTENCY_KEY_REUSED`。比較依據為 body（`{ address_id }`）的正規化 JSON 雜湊；同一 key 但 `address_id` 不同即回 409。
 - 第一次請求失敗（4xx、`TX_TIMEOUT`、`TX_CONFLICT`）時不保留 key，可用同一 key 重試。
 - 收到 503 `TX_CONFLICT`（`retryable: true`、`Retry-After: 1`）或網路錯誤時，前端等待後**以同一個 key** 重試；使用者重新按下「下單」才產生新 key。
 - 實作：SDK 平台層尚未支援（sdk #85），v1 以 `orders.idempotency_key` 與 method 內先查後寫模擬；並發的同 key 請求在 SDK 支援前無法完全保證只建立一筆 **〔缺口〕**。
@@ -207,3 +225,19 @@ type Order = { id: string; status: OrderStatus; items: OrderItem[]; total_cents:
 
 - `details.cart_item_ids` 列出所有受影響的購物車品項 id，前端可標示或移除後再下單。
 - SDK 目前的錯誤格式只有 `code`、`message`、`request_id`，**無法輸出 `details`** **〔缺口〕**。在 SDK 支援前，前端遇到此錯誤應重新取得購物車，以 `product.in_stock` 為 false 或商品已不存在的品項判斷。
+
+## 12. 收貨地址（前端 #29，sample-shop PR #64）
+
+- model `address`：每位使用者各自擁有（owner-key `user_id`），欄位 `id`、`recipient`、`phone`、`region`、`line1`、`is_default`、`created_at`；每人最多 20 個。
+- 驗證（與 PR #64 `lib/address.ts` 相同）：`recipient` 1–50 字；`phone` 移除空白、連字號與開頭 `+852`／`852` 後須為 `[2-9]` 開頭的 8 位數字，並以正規化後的值儲存；`region` 為 香港島／九龍／新界／離島；`line1` 5–200 字。不通過回 422 `VALIDATION_ERROR`。
+- `GET /shop/v1/addresses`：回傳 `Address[]`（非 `Page`），預設地址排最前，其餘依 `created_at` 由新到舊。
+- `POST /shop/v1/addresses`：201。使用者的第一個地址自動成為預設；`is_default: true` 時在同一交易中先清除舊的預設。達 20 個回 422 `ADDRESS_LIMIT`。
+- 下單：body `address_id` 必填（缺少 422 `ADDRESS_REQUIRED`；不存在或屬於他人 404 `ADDRESS_NOT_FOUND`）。`order.place` 在同一交易中把 `recipient`／`phone`／`region`／`line1` 快照寫入 `orders.shipping_address`，之後修改地址簿不影響訂單。`address_id` 計入冪等 body 雜湊（§10）。
+- `Product.sold_count`：`order.place` 扣庫存時同時累加（有規格時加在所屬商品）；不可由 `ProductInput` 提供。
+- 規劃中（#44，v1 未實作）：`PUT /shop/v1/addresses/{id}`（修改，回 200 `Address`）、`DELETE /shop/v1/addresses/{id}`（軟刪除，回 204；刪除預設地址時由最新的地址遞補）、`POST /shop/v1/addresses/{id}/default`（設為預設，回 200 `Address`）。
+- 與 PR #64 `types.ts` 的差異：
+  - 需求原寫 `address_line`，此處依 `types.ts` 採用 `line1`。
+  - `CreateOrderInput.address_id` 在 `types.ts` 為選填（`address_id?`），後端視為必填（缺少回 422）。
+  - `Order.shipping_address` 在 `types.ts` 可為 null／缺少；後端新訂單一律有值，只有加入地址前的舊訂單為 null。
+  - 地址驗證錯誤碼 `VALIDATION_ERROR` 與前端 mock 一致，但本合約其他端點使用 `VALIDATION_FAILED`（SDK 預設）**〔待統一〕**。
+

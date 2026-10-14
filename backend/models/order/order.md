@@ -8,7 +8,8 @@
 - total_cents：整數，必填，最小 0。
 - currency：字串，必填，3 個大寫字母。
 - idempotency_key：字串，必填，1 至 64 字。
-- request_hash：字串，必填，最長 64 字（建立訂單時請求 body 的雜湊，用於判斷同 key 不同 body）。
+- shipping_address：json 類型，選填；下單時的收貨地址快照，含 recipient、phone、region、line1 四個字串。之後修改地址簿不影響此快照。
+- request_hash：字串，必填，最長 64 字（建立訂單時請求 body（含 address_id）的雜湊，用於判斷同 key 不同 body）。
 
 ## 輸出
 - get 一併回傳 items（order_items 快照，欄位同 order-item）。
