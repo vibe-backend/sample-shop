@@ -1,3 +1,4 @@
+import { StaffOrdersPage } from './pages/StaffOrders';
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, NavLink, Route, Routes, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { House, ListOrdered, LogOut, Menu, Monitor, Moon, Search, ShoppingCart, Sun, User } from 'lucide-react';
@@ -95,6 +96,7 @@ function AccountPage() {
       <nav className="grid divide-y rounded-xl bg-card" aria-label="帳戶">
         <Link to="/orders" className="px-4 py-3">我的訂單</Link>
         {isStaff && <Link to="/staff/products" className="px-4 py-3">商品管理</Link>}
+        {isStaff && <Link to="/staff/orders" className="px-4 py-3">訂單管理</Link>}
         <button type="button" className="px-4 py-3 text-left text-destructive" onClick={() => { logout(); nav('/'); }}>
           登出
         </button>
@@ -136,6 +138,7 @@ export default function App() {
     { to: '/', label: '商品', end: true, show: true },
     { to: '/orders', label: '訂單', end: false, show: !!me },
     { to: '/staff/products', label: '商品管理', end: false, show: isStaff },
+    { to: '/staff/orders', label: '訂單管理', end: false, show: isStaff },
   ].filter((l) => l.show);
 
   function doLogout() {
@@ -201,6 +204,7 @@ export default function App() {
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onSelect={() => nav('/orders')}>我的訂單</DropdownMenuItem>
                   {isStaff && <DropdownMenuItem onSelect={() => nav('/staff/products')}>商品管理</DropdownMenuItem>}
+                  {isStaff && <DropdownMenuItem onSelect={() => nav('/staff/orders')}>訂單管理</DropdownMenuItem>}
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onSelect={doLogout}>
                     <LogOut /> 登出
@@ -251,6 +255,7 @@ export default function App() {
           <Route path="/account" element={<RequireAuth><AccountPage /></RequireAuth>} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          <Route path="/staff/orders" element={<RequireAuth staff><StaffOrdersPage /></RequireAuth>} />
           <Route path="/staff/products" element={<RequireAuth staff><StaffProductsPage /></RequireAuth>} />
           <Route path="/staff/products/new" element={<RequireAuth staff><StaffEditPage /></RequireAuth>} />
           <Route path="/staff/products/:id" element={<RequireAuth staff><StaffEditPage /></RequireAuth>} />

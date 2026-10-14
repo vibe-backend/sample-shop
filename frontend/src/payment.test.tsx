@@ -46,7 +46,7 @@ describe('mock payment (#30)', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '重試：模擬付款成功' }));
     await screen.findByText('付款成功', undefined, { timeout: 5000 });
-    expect(screen.getByText('已付款')).toBeTruthy();
+    expect(screen.getByText('已付款', { selector: '[data-slot=badge]' })).toBeTruthy();
     expect(screen.getByText(/以模擬支付寶付款/)).toBeTruthy();
   }, 25000);
 
@@ -57,7 +57,7 @@ describe('mock payment (#30)', () => {
     renderAt(`/orders/${o.id}`);
     const link = await screen.findByRole('link', { name: '去付款' }, { timeout: 5000 });
     expect(link.getAttribute('href')).toBe(`/orders/${o.id}/pay`);
-    expect(screen.getByText('待付款')).toBeTruthy();
+    expect(screen.getByText('待付款', { selector: '[data-slot=badge]' })).toBeTruthy();
   }, 15000);
 });
 

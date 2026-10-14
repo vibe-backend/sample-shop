@@ -331,3 +331,47 @@ describe('mock payment (#30)', () => {
     expect((await api.payOrder(o.id, { method: 'mock_card', simulate: 'success' }, 'kf')).status).toBe('paid');
   });
 });
+
+describe('order status flow (#34)', () => {
+  async function placed() {
+    await loginAs('demo@example.com', 'demo1234');
+    await api.addCartItem('p_007', 2);
+    return api.createOrder(crypto.randomUUID(), A);
+  }
+  const stock = () => api.state.products.find((p) => p.id === 'p_007')!.stock;
+
+  it('records history: pending → paid → shipped → delivered', async () => {
+    const o = await placed();
+    await api.payOrder(o.id, { method: 'mock_card', simulate: 'success' }, 'p1');
+    await expectCode(api.confirmDelivery(o.id), 409, 'INVALID_TRANSITION');
+    await loginAs('staff@example.com', 'staff1234');
+    expect((await api.listStaffOrders({ status: 'paid' })).items.map((x) => x.id)).toContain(o.id);
+    await api.updateStaffOrderStatus(o.id, 'shipped');
+    await loginAs('demo@example.com', 'demo1234');
+    const d = await api.confirmDelivery(o.id);
+    expect(d.status_history!.map((h) => h.status)).toEqual(['pending', 'paid', 'shipped', 'delivered']);
+    await expectCode(api.cancelOrder(o.id), 409, 'INVALID_TRANSITION');
+  });
+
+  it('buyer cancel restores stock; shipped orders cannot be cancelled', async () => {
+    const before = stock();
+    const o = await placed();
+    expect(stock()).toBe(before - 2);
+    await api.cancelOrder(o.id);
+    expect(stock()).toBe(before);
+    await expectCode(api.payOrder(o.id, { method: 'mock_card', simulate: 'success' }, 'p2'), 409, 'ORDER_NOT_PAYABLE');
+    const o2 = await placed();
+    await api.payOrder(o2.id, { method: 'mock_card', simulate: 'success' }, 'p3');
+    await loginAs('staff@example.com', 'staff1234');
+    await api.updateStaffOrderStatus(o2.id, 'shipped');
+    await expectCode(api.updateStaffOrderStatus(o2.id, 'cancelled'), 409, 'INVALID_TRANSITION');
+  });
+
+  it('staff endpoints require staff; staff cannot ship an unpaid order', async () => {
+    const o = await placed();
+    await expectCode(api.listStaffOrders(), 403, 'FORBIDDEN');
+    await loginAs('staff@example.com', 'staff1234');
+    await expectCode(api.updateStaffOrderStatus(o.id, 'shipped'), 409, 'INVALID_TRANSITION');
+    await expectCode(api.updateStaffOrderStatus(o.id, 'delivered' as never), 422, 'VALIDATION_FAILED');
+  });
+});

@@ -75,3 +75,23 @@ describe('real adapter payOrder — CONTRACT.md §13 @a3d4304', () => {
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('real adapter order status endpoints (#34, proposed — not yet in CONTRACT.md)', () => {
+  it('uses the proposed routes and methods', async () => {
+    const fetch = vi.fn().mockImplementation(async () => json(200, { ...order, status: 'cancelled' }));
+    vi.stubGlobal('fetch', fetch);
+    const r = createRealApi('http://x', 'main');
+    await r.cancelOrder('ord_1');
+    await r.confirmDelivery('ord_1');
+    await r.updateStaffOrderStatus('ord_1', 'shipped');
+    fetch.mockImplementation(async () => json(200, { items: [], next_cursor: null }));
+    await r.listStaffOrders({ status: 'paid' });
+    expect(fetch.mock.calls.map(([u, i]) => `${i.method} ${String(u).replace('http://x', '')}`)).toEqual([
+      'POST /shop/v1/orders/ord_1/cancel',
+      'POST /shop/v1/orders/ord_1/confirm-delivery',
+      'PUT /shop/v1/staff/orders/ord_1/status',
+      'GET /shop/v1/staff/orders?status=paid',
+    ]);
+    expect(JSON.parse(fetch.mock.calls[2][1].body)).toEqual({ status: 'shipped' });
+  });
+});

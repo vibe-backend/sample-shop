@@ -57,6 +57,8 @@ Order creation always sends an `Idempotency-Key` (required, §10 @a3d4304); on `
 
 **Mock payment (#30): real mode defined in contract, unverified.** `POST /shop/v1/orders/{id}/payments` (`Idempotency-Key` required; `402 PAYMENT_DECLINED`, `409 ORDER_NOT_PAYABLE` / `IDEMPOTENCY_KEY_REUSED`) and `Order.payment_method` / `paid_at` follow `backend/CONTRACT.md` §13 @a3d4304, but the backend does not compile yet, so payment has only been exercised in mock mode. The pay page reuses one key per attempt (new key after a definitive failure or a method change). Stock reservation before payment and auto-cancel of unpaid orders are deferred to #66.
 
+**Order status flow (#34): real mode 未支援 (not in contract yet).** The mock implements `pending → paid → shipped → delivered` plus buyer/staff cancel of `pending`/`paid` orders (stock restored), with `status_history` and `409 INVALID_TRANSITION` for illegal moves. The real adapter calls the *proposed* `POST /shop/v1/orders/{id}/cancel`, `POST /shop/v1/orders/{id}/confirm-delivery`, `GET /shop/v1/staff/orders` and `PUT /shop/v1/staff/orders/{id}/status`, which `backend/CONTRACT.md` @a3d4304 does not define yet.
+
 Mock data is stored in `localStorage` under `shop.mock.v2`. Data from the older `shop.mock.v1` key is migrated once on load (users, orders and staff edits kept; demo SKUs attached; cart lines for products that now need a spec are dropped) and the old key is removed. Migrated users get no demo addresses (only a fresh seed has them), so they add one at checkout.
 
 ### Mock mode

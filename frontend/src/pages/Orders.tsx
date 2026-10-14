@@ -13,20 +13,19 @@ import { BackLink } from './Products';
 import { AddressLines } from '../components/address';
 import { PAYMENT_LABEL, PaymentPicker } from '../components/payment';
 import { ApiRequestError, type PaymentMethod } from '../api';
+import { toast } from 'sonner';
+import { Check, X } from 'lucide-react';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { STATUS_HINT, STATUS_LABEL, STEPS } from '@/lib/orderStatus';
 
-export const STATUS_LABEL: Record<OrderStatus, string> = {
-  pending: '待付款',
-  paid: '已付款',
-  shipped: '已出貨',
-  delivered: '已送達',
-  cancelled: '已取消',
-};
+export { STATUS_LABEL };
 
 export const formatDate = (iso: string) =>
   new Intl.DateTimeFormat('zh-Hant', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso));
 
 export function StatusBadge({ status }: { status: OrderStatus }) {
-  const tone = status === 'pending' ? 'bg-warning/15 text-warning' : status === 'cancelled' ? '' : 'bg-success/15 text-success';
+  const tone =
+    status === 'pending' ? 'bg-warning/15 text-warning' : status === 'paid' || status === 'shipped' ? 'bg-secondary text-secondary-foreground' : status === 'cancelled' ? '' : 'bg-success/15 text-success';
   return (
     <Badge variant={status === 'cancelled' ? 'secondary' : 'default'} className={cn(tone)}>
       {STATUS_LABEL[status] ?? status}
@@ -100,11 +99,36 @@ export function OrdersPage() {
 export function OrderDetailPage() {
   const { id = '' } = useParams();
   const [params] = useSearchParams();
-  const [o, error, loading] = useAsync(() => api.getOrder(id), [id]);
-  if (loading) return <Spinner />;
+  const [o, error, loading, reload] = useAsync(() => api.getOrder(id), [id]);
+  const [ask, setAsk] = useState<'cancel' | 'deliver' | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [live, setLive] = useState('');
+  if (loading && !o) return <Spinner />;
   if (!o) return <ErrorNote error={error} />;
+
+  async function act(kind: 'cancel' | 'deliver') {
+    setBusy(true);
+    setLive('處理中…');
+    try {
+      await (kind === 'cancel' ? api.cancelOrder(o!.id) : api.confirmDelivery(o!.id));
+      const msg = kind === 'cancel' ? '訂單已取消' : '已確認收貨';
+      setLive(msg);
+      toast.success(msg);
+    } catch (e) {
+      setLive('');
+      toast.error(e instanceof ApiRequestError ? e.message : '操作失敗');
+    } finally {
+      setBusy(false);
+      setAsk(null);
+      reload(); // 409 INVALID_TRANSITION: someone else moved it — show the current state
+    }
+  }
+
   return (
     <section>
+      <p className="sr-only" role="status" aria-live="polite">
+        {live}
+      </p>
       {params.get('paid') && o.status === 'paid' && (
         <div className="mb-5 flex items-center gap-4 rounded-xl border border-success/35 bg-success/10 p-5" role="status">
           <CircleCheck className="size-11 shrink-0 text-success" aria-hidden="true" />
@@ -123,14 +147,45 @@ export function OrderDetailPage() {
             <StatusBadge status={o.status} />
           </CardAction>
         </CardHeader>
-        {o.status === 'pending' && (
+        <CardContent>
+          <StatusProgress order={o} />
+          <p className="mt-3 text-sm text-muted-foreground">{STATUS_HINT[o.status]}</p>
+        </CardContent>
+        {(o.status === 'pending' || o.status === 'paid' || o.status === 'shipped') && (
           <CardContent>
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-warning/10 p-3">
-              <span className="text-sm">此訂單尚未付款。</span>
-              <Button asChild>
-                <Link to={`/orders/${o.id}/pay`}>去付款</Link>
-              </Button>
+            <div className={cn('flex flex-wrap items-center justify-end gap-3 rounded-lg p-3', o.status === 'pending' ? 'bg-warning/10' : 'bg-muted')}>
+              {o.status === 'pending' && <span className="mr-auto text-sm">此訂單尚未付款。</span>}
+              {(o.status === 'pending' || o.status === 'paid') && (
+                <Button variant="outline" disabled={busy} onClick={() => setAsk('cancel')}>
+                  取消訂單
+                </Button>
+              )}
+              {o.status === 'pending' && (
+                <Button asChild>
+                  <Link to={`/orders/${o.id}/pay`}>去付款</Link>
+                </Button>
+              )}
+              {o.status === 'shipped' && (
+                <Button disabled={busy} onClick={() => setAsk('deliver')}>
+                  確認收貨
+                </Button>
+              )}
             </div>
+          </CardContent>
+        )}
+        {o.status_history && o.status_history.length > 0 && (
+          <CardContent>
+            <h2 className="mb-1.5 text-sm font-medium text-muted-foreground">訂單記錄</h2>
+            <ol className="grid gap-1 text-sm">
+              {[...o.status_history].reverse().map((h, i) => (
+                <li key={i} className="flex gap-3">
+                  <time className="w-40 shrink-0 text-muted-foreground tabular-nums" dateTime={h.at}>
+                    {formatDate(h.at)}
+                  </time>
+                  <span>{STATUS_LABEL[h.status]}</span>
+                </li>
+              ))}
+            </ol>
           </CardContent>
         )}
         {o.status === 'paid' && o.paid_at && (
@@ -176,7 +231,65 @@ export function OrderDetailPage() {
           </Table>
         </CardContent>
       </Card>
+      <AlertDialog open={ask !== null} onOpenChange={(v) => !v && setAsk(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{ask === 'cancel' ? '確定取消此訂單？' : '確認已收到商品？'}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {ask === 'cancel' ? (o.status === 'paid' ? '取消後款項將按原付款方式退回（模擬），庫存會歸還。' : '取消後庫存會歸還，此操作無法復原。') : '確認後訂單將標示為已送達，此操作無法復原。'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy}>返回</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={busy}
+              onClick={(e) => {
+                e.preventDefault();
+                void act(ask!);
+              }}
+            >
+              {busy ? '處理中…' : ask === 'cancel' ? '確定取消' : '確認收貨'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </section>
+  );
+}
+
+/** Taobao-style progress: 待付款 → 已付款 → 已出貨 → 已送達 (cancelled shown as a terminal note). */
+export function StatusProgress({ order }: { order: Order }) {
+  if (order.status === 'cancelled') {
+    return (
+      <p className="flex items-center gap-2 text-sm font-medium">
+        <X className="size-4" aria-hidden="true" /> 訂單已取消
+      </p>
+    );
+  }
+  const cur = STEPS.indexOf(order.status);
+  return (
+    <ol aria-label="訂單進度" className="grid grid-cols-4 gap-2">
+      {STEPS.map((s, i) => {
+        const done = i < cur;
+        const now = i === cur;
+        return (
+          <li key={s} aria-current={now ? 'step' : undefined} className="flex flex-col items-center gap-1 text-center text-xs">
+            <span
+              className={cn(
+                'grid size-7 place-items-center rounded-full border-2 text-xs font-semibold',
+                done ? 'border-primary bg-primary text-primary-foreground' : now ? 'border-primary text-primary' : 'border-border text-muted-foreground',
+              )}
+            >
+              {done ? <Check className="size-4" aria-hidden="true" /> : i + 1}
+            </span>
+            <span className={cn(now ? 'font-semibold text-foreground' : done ? 'text-foreground' : 'text-muted-foreground')}>
+              {STATUS_LABEL[s]}
+              {done && <span className="sr-only">（已完成）</span>}
+            </span>
+          </li>
+        );
+      })}
+    </ol>
   );
 }
 
