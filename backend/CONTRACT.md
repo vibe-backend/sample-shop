@@ -46,7 +46,9 @@
 | 21 | `POST /shop/v1/orders/{id}/confirm-delivery` | JWT（本人） | body `{}`；**不需** `Idempotency-Key` | 200 `Order`（`status: 'delivered'`） | 404 `NOT_FOUND`、409 `INVALID_TRANSITION`、504、503 |
 | 22 | `GET /shop/v1/staff/orders` | JWT，`roles: [staff]` | query `status`(`OrderStatus`), `cursor`, `limit`(1–100) | 200 `Page<StaffOrder>`（所有使用者，新到舊） | 403 `FORBIDDEN`、422 `VALIDATION_FAILED` |
 | 23 | `PUT /shop/v1/staff/orders/{id}/status` | JWT，`roles: [staff]` | body `{ status: 'shipped' \| 'cancelled' }`；**不需** `Idempotency-Key` | 200 `StaffOrder` | 403 `FORBIDDEN`、404 `NOT_FOUND`、409 `INVALID_TRANSITION`、422 `VALIDATION_FAILED`、504、503 |
-| — | `PUT`／`DELETE /shop/v1/addresses/{id}`、`POST /shop/v1/addresses/{id}/default` | JWT（本人） | — | 規劃中（#44），v1 未實作 | — |
+| 24 | `PUT /shop/v1/addresses/{id}` | JWT（本人） | body `AddressInput`（完整取代；`is_default` 忽略） | 200 `Address` | 404 `ADDRESS_NOT_FOUND`、422 `VALIDATION_FAILED` |
+| 25 | `DELETE /shop/v1/addresses/{id}` | JWT（本人） | — | 204（軟刪除；刪除預設時最新的剩餘地址遞補） | 404 `ADDRESS_NOT_FOUND` |
+| 26 | `POST /shop/v1/addresses/{id}/default` | JWT（本人） | body `{}` | 200 `Address`（`is_default: true`；同一交易清除舊預設） | 404 `ADDRESS_NOT_FOUND` |
 
 ## 3. 資料型別
 
@@ -149,7 +151,7 @@ type StaffOrderStatusInput = { status: 'shipped' | 'cancelled' };
 | 409 | `ORDER_NOT_PAYABLE` | 訂單付款 | 訂單已付款或已取消，或並發付款已先成功（§13） |
 | 409 | `INVALID_TRANSITION` | 取消、確認收貨、店員變更狀態 | 目前狀態不允許此轉換（含重複操作已是終止狀態的訂單），見 §14 |
 | 403 | `FORBIDDEN` | 店員端點 | 非 staff 角色 |
-| 404 | `ADDRESS_NOT_FOUND` | 下單 | `address_id` 不存在或屬於他人（§12） |
+| 404 | `ADDRESS_NOT_FOUND` | 下單、修改／刪除地址、設為預設 | 地址不存在、屬於他人或已軟刪除（§12） |
 | 412 / 428 | — | 更新商品 | `If-Match` 不符／缺少 |
 | 422 | `VALIDATION_FAILED` | 全部 | 欄位驗證失敗或未宣告欄位 |
 | 422 | `SKU_REQUIRED` | 加入購物車 | 商品有規格但未提供 `sku_id` |
@@ -250,11 +252,18 @@ type StaffOrderStatusInput = { status: 'shipped' | 'cancelled' };
 - `POST /shop/v1/addresses`：201。使用者的第一個地址自動成為預設；`is_default: true` 時在同一交易中先清除舊的預設。達 20 個回 422 `ADDRESS_LIMIT`。
 - 下單：body `address_id` 必填（缺少 422 `ADDRESS_REQUIRED`；不存在或屬於他人 404 `ADDRESS_NOT_FOUND`）。`order.place` 在同一交易中把 `recipient`／`phone`／`region`／`line1` 快照寫入 `orders.shipping_address`，之後修改地址簿不影響訂單。`address_id` 計入冪等 body 雜湊（§10）。
 - `Product.sold_count`：`order.place` 扣庫存時同時累加（有規格時加在所屬商品）；不可由 `ProductInput` 提供。
-- 規劃中（#44，v1 未實作）：`PUT /shop/v1/addresses/{id}`（修改，回 200 `Address`）、`DELETE /shop/v1/addresses/{id}`（軟刪除，回 204；刪除預設地址時由最新的地址遞補）、`POST /shop/v1/addresses/{id}/default`（設為預設，回 200 `Address`）。
+- 地址簿管理（#44，前端 PR #69）：已列為正式端點 §2 #24–#26。
+  - `PUT /shop/v1/addresses/{id}`：body 為 `AddressInput`，**完整取代** `recipient`／`phone`／`region`／`line1`（驗證同新增，不通過回 422 `VALIDATION_FAILED`）。`is_default` 會被忽略（不報錯也不寫入）；只有 `POST …/default` 能變更預設。回 200 `Address`。
+  - `DELETE /shop/v1/addresses/{id}`：軟刪除（寫入 `deleted_at`），回 204。刪除預設地址時，在同一交易中由剩餘未刪除地址中 `created_at` 最新的一個遞補為預設；刪除最後一個地址後沒有預設地址（之後新增的第一個地址自動成為預設）。
+  - `POST /shop/v1/addresses/{id}/default`：在同一交易中清除舊的預設並設定新預設，回 200 `Address`。已是預設時仍回 200。
+  - 三者對不存在、屬於他人或已軟刪除的地址一律回 404 `ADDRESS_NOT_FOUND`。
+  - 已軟刪除的地址：不出現在 `GET /shop/v1/addresses`；不計入 20 個上限；以其 id 下單回 404 `ADDRESS_NOT_FOUND`（`order.place` 步驟 2 只查 `deleted_at` 為 null 的地址）。
+  - 既有訂單不受影響：`orders.shipping_address` 是下單時寫入的快照（`recipient`／`phone`／`region`／`line1`），訂單不存 `address_id` 參照，因此修改或刪除地址都不會改變已下單訂單的收貨地址。
 - 與 PR #64 `types.ts` 的差異：
   - 需求原寫 `address_line`，此處依 `types.ts` 採用 `line1`。
-  - `CreateOrderInput.address_id` 在 `types.ts` 為選填（`address_id?`），後端視為必填（缺少回 422）。
+  - `CreateOrderInput.address_id` 為必填（與 §3 一致；PR #69 `types.ts` 已改為必填 `address_id: string`）；缺少回 422 `ADDRESS_REQUIRED`。
   - `Order.shipping_address` 在 `types.ts` 可為 null／缺少；後端新訂單一律有值，只有加入地址前的舊訂單為 null。
+  - 與 PR #69 `types.ts` 對照（#24–#26）：路由、請求型別 `AddressInput`、回傳型別（PUT 與設為預設回 `Address`，DELETE 回 204／`void`）、錯誤碼、`is_default` 忽略、刪除預設時最新的剩餘地址遞補皆一致，無欄位衝突。
   - 地址驗證錯誤碼已與其他端點統一為 `VALIDATION_FAILED`（已與前端確認）。
 
 ## 13. 模擬付款（前端 #30，sample-shop PR #65）

@@ -15,7 +15,7 @@
 
 ## 做法（依此固定順序）
 1. 查詢此使用者是否已有相同 idempotency_key 的訂單；若有且 request_hash 相同，直接回傳該訂單，不重複建立；若 request_hash 不同回 `IDEMPOTENCY_KEY_REUSED`。
-2. 以 address_id 查詢 addresses（user_id = ctx.user.id、未刪除）；查無（不存在或屬於他人）回 `ADDRESS_NOT_FOUND`。
+2. 以 address_id 查詢 addresses（user_id = ctx.user.id、deleted_at 為 null）；查無（不存在、屬於他人或已軟刪除）回 `ADDRESS_NOT_FOUND`。
 3. 查詢購物車（cart_items，user_id = ctx.user.id、未刪除），關聯 products 與 product_variants；若為空回 `CART_EMPTY`。
 4. 任一商品或所選規格已 inactive 或刪除（或商品有 options 但規格全部停用），回 `PRODUCT_UNAVAILABLE`，並在錯誤細節附上所有受影響的 cart_item id（cart_item_ids）。
 5. 扣減庫存：有 sku_id 的品項以 `UPDATE product_variants SET stock = stock - 數量 WHERE id = sku_id AND stock >= 數量`，沒有規格的品項以同樣方式更新 products；依 sku_id／product_id 由小到大的順序逐筆執行，並檢查影響列數，任一筆為 0 即回 `OUT_OF_STOCK`（整個交易回滾）。同時將對應 products 的 sold_count 加上數量（有規格時加在所屬商品）。
