@@ -6,6 +6,8 @@ import {
   type AuthToken,
   type Cart,
   type Order,
+  type OrderStatus,
+  type StaffOrder,
   type Page,
   type Product,
   type ProductQuery,
@@ -14,6 +16,7 @@ import {
 } from './types';
 import { tokenStore } from './token';
 import { MAX_ADDRESSES, normalisePhone, validateAddress } from '../lib/address';
+import { canTransition, STATUS_LABEL, type Actor } from '../lib/orderStatus';
 
 interface StoredCartLine {
   id: string;
@@ -131,6 +134,42 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
   }
   function save() {
     if (opts.persist) globalThis.localStorage?.setItem(STORAGE_KEY, JSON.stringify({ ...state, sessions: {} }));
+  }
+  /** #34 state machine; illegal moves → 409 INVALID_TRANSITION. */
+  function transition(o: Order, to: OrderStatus, actor: Actor): Order {
+    if (!canTransition(o.status, to, actor)) throw err(409, 'INVALID_TRANSITION', `訂單狀態「${STATUS_LABEL[o.status]}」不可轉為「${STATUS_LABEL[to]}」`);
+    o.status = to;
+    (o.status_history ??= []).push({ status: to, at: new Date(now()).toISOString() });
+    return o;
+  }
+  function ownOrder(oid: string): Order {
+    const o = (state.orders[currentUser().id] ?? []).find((x) => x.id === oid);
+    if (!o) throw err(404, 'NOT_FOUND', '找不到訂單');
+    return o;
+  }
+  function allOrders(): StaffOrder[] {
+    return Object.entries(state.orders).flatMap(([uid, os]) => {
+      const u = state.users.find((x) => x.id === uid);
+      const buyer = { id: uid, display_name: u?.display_name ?? uid, email: u?.email ?? '' };
+      return os.map((o) => ({ ...o, buyer }));
+    });
+  }
+  /** Cancelling returns stock (and sold_count) taken at order time. */
+  function restock(o: Order) {
+    for (const it of o.items) {
+      const p = state.products.find((x) => x.id === it.product_id);
+      if (!p) continue;
+      p.sold_count = Math.max(0, (p.sold_count ?? 0) - it.quantity);
+      const v = it.sku_id ? p.variants?.find((x) => x.id === it.sku_id) : undefined;
+      if (v) {
+        v.stock += it.quantity;
+        v.in_stock = v.stock > 0;
+        syncVariantTotals(p);
+      } else if (!it.sku_id) {
+        p.stock += it.quantity;
+        p.in_stock = p.stock > 0;
+      }
+    }
   }
   const addressesOf = (uid: string) => ((state.addresses ??= {})[uid] ??= []);
   // §12 @a3d4304: default first, then newest first.
@@ -365,6 +404,7 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
         const order: Order = {
           id: id('ord'),
           status: 'pending',
+          status_history: [{ status: 'pending', at: new Date(now()).toISOString() }],
           payment_method: null,
           paid_at: null,
           shipping_address: { recipient: addr.recipient, phone: addr.phone, region: addr.region, line1: addr.line1 },
@@ -405,12 +445,39 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
         if (pay.simulate !== 'success' && pay.simulate !== 'failure') throw err(422, 'VALIDATION_FAILED', '模擬結果無效');
         if (o.status !== 'pending') throw err(409, 'ORDER_NOT_PAYABLE', o.status === 'paid' ? '此訂單已付款' : '此訂單不可付款');
         if (pay.simulate === 'failure') throw err(402, 'PAYMENT_DECLINED', '付款失敗（模擬），請重試或更換付款方式');
-        o.status = 'paid';
         o.payment_method = pay.method;
-        o.paid_at = new Date(now()).toISOString();
+        transition(o, 'paid', 'system');
+        o.paid_at = o.status_history!.at(-1)!.at;
         state.idempotency[ik] = o.id;
         (state.idempotency_body ??= {})[ik] = hash;
         return o;
+      }),
+    cancelOrder: (oid) =>
+      run(() => {
+        const o = ownOrder(oid);
+        transition(o, 'cancelled', 'buyer');
+        restock(o);
+        return o;
+      }),
+    confirmDelivery: (oid) => run(() => transition(ownOrder(oid), 'delivered', 'buyer')),
+    listStaffOrders: (q = {}) =>
+      run(() => {
+        requireStaff();
+        const all = allOrders()
+          .filter((o) => !q.status || o.status === q.status)
+          .sort((a, b) => b.created_at.localeCompare(a.created_at));
+        return paginate(all, q.cursor, 20);
+      }),
+    updateStaffOrderStatus: (oid, status) =>
+      run(() => {
+        requireStaff();
+        const o = allOrders().find((x) => x.id === oid);
+        if (!o) throw err(404, 'NOT_FOUND', '找不到訂單');
+        const live = (state.orders[o.buyer.id] ?? []).find((x) => x.id === oid)!;
+        if (status !== 'shipped' && status !== 'cancelled') throw err(422, 'VALIDATION_FAILED', '狀態無效');
+        transition(live, status, 'staff');
+        if (status === 'cancelled') restock(live);
+        return { ...live, buyer: o.buyer };
       }),
     listAddresses: () => run(() => sortAddresses(addressesOf(currentUser().id))),
     createAddress: (input) =>

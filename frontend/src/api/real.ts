@@ -5,6 +5,8 @@ import {
   type Cart,
   type Me,
   type Order,
+  type OrderStatus,
+  type StaffOrder,
   type Page,
   type Product,
   type ProductInput,
@@ -102,6 +104,10 @@ export function createRealApi(baseUrl: string, slug: string): ShopApi {
     // §13 @a3d4304
     // Same TX_CONFLICT / network retry rule as orders (§13 lists 503/504), always with the same key.
     payOrder: (id, p, key) => withRetry(() => req<Order>('POST', `/shop/v1/orders/${encodeURIComponent(id)}/payments`, p, { 'Idempotency-Key': key })),
+    cancelOrder: (id) => req<Order>('POST', `/shop/v1/orders/${encodeURIComponent(id)}/cancel`, {}),
+    confirmDelivery: (id) => req<Order>('POST', `/shop/v1/orders/${encodeURIComponent(id)}/confirm-delivery`, {}),
+    listStaffOrders: (q: { status?: OrderStatus; cursor?: string } = {}) => req<Page<StaffOrder>>('GET', '/shop/v1/staff/orders' + qs(q)),
+    updateStaffOrderStatus: (id, status) => req<StaffOrder>('PUT', `/shop/v1/staff/orders/${encodeURIComponent(id)}/status`, { status }),
     // §2 #17/#18, §12 @a3d4304
     listAddresses: () => req<Address[]>('GET', '/shop/v1/addresses'),
     createAddress: (a) => req<Address>('POST', '/shop/v1/addresses', a),

@@ -138,8 +138,19 @@ export interface Cart {
   subtotal_cents: number;
 }
 
-/** Contract gap: the status values are not fixed; these are assumed. */
+/** CONTRACT.md §3/§7 values. Transitions (#34, not yet in CONTRACT.md): see `lib/orderStatus.ts`. */
 export type OrderStatus = 'pending' | 'paid' | 'shipped' | 'delivered' | 'cancelled';
+
+/** #34 (not yet in CONTRACT.md): one entry per status change, oldest first. */
+export interface OrderStatusEvent {
+  status: OrderStatus;
+  at: string;
+}
+
+/** #34 (not yet in CONTRACT.md): staff view of an order with its buyer. */
+export interface StaffOrder extends Order {
+  buyer: { id: string; display_name: string; email: string };
+}
 
 export interface OrderItem {
   product_id: string;
@@ -198,6 +209,8 @@ export interface Order {
   payment_method: PaymentMethod | null;
   /** §13 @a3d4304: ISO 8601 UTC; always present, null until paid. */
   paid_at: string | null;
+  /** #34 (not yet in CONTRACT.md): status timeline, oldest first. */
+  status_history?: OrderStatusEvent[];
   /** §12 @a3d4304: snapshot written at order time; null/absent only for legacy orders placed before addresses existed. */
   shipping_address?: AddressSnapshot | null;
   items: OrderItem[];
@@ -237,6 +250,14 @@ export interface ShopApi {
   payOrder(orderId: string, p: PaymentInput, idempotencyKey: string): Promise<Order>;
   /** §2 #17 / §12 @a3d4304: GET /shop/v1/addresses → Address[] (not paged), default first, then newest first. */
   listAddresses(): Promise<Address[]>;
+  /** #34: buyer cancels a pending/paid order (stock restored). 409 INVALID_TRANSITION otherwise. */
+  cancelOrder(orderId: string): Promise<Order>;
+  /** #34: buyer confirms receipt of a shipped order → delivered. 409 INVALID_TRANSITION otherwise. */
+  confirmDelivery(orderId: string): Promise<Order>;
+  /** #34: staff — all orders, newest first, optional status filter. */
+  listStaffOrders(q?: { status?: OrderStatus; cursor?: string }): Promise<Page<StaffOrder>>;
+  /** #34: staff marks a paid order shipped (also allows staff cancel). 409 INVALID_TRANSITION otherwise. */
+  updateStaffOrderStatus(orderId: string, status: 'shipped' | 'cancelled'): Promise<StaffOrder>;
   /** §2 #18 / §12 @a3d4304: POST /shop/v1/addresses → 201; 422 VALIDATION_FAILED, 422 ADDRESS_LIMIT. */
   createAddress(a: AddressInput): Promise<Address>;
   createProduct(p: ProductInput): Promise<Product>;
