@@ -14,7 +14,7 @@
 - request_hash：字串，必填，最長 64 字（建立訂單時請求 body（含 address_id）的雜湊，用於判斷同 key 不同 body）。
 
 ## 輸出
-- get 一併回傳 items（order_items 快照，欄位同 order-item）。
+- get 一併回傳 items（order_items 快照，欄位同 order-item）與 status_history（order_status_events 的 status、at，由舊到新，ISO 8601 UTC）。
 
 ## 擁有權
 - owner-key 為 `user_id`：使用者只能讀取自己的訂單。
@@ -22,7 +22,9 @@
 ## CRUD
 - get。
 - list：每頁預設 20 筆、最多 100 筆，依 created_at 由新到舊排序。
-- 不提供 update、delete 給一般使用者；status 只經由 order.pay 由 pending 改為 paid。
+- 不提供 update、delete；status 只經由 method 轉換：order.pay（pending → paid）、order.cancel（pending／paid → cancelled）、order.confirm-delivery（shipped → delivered）、order.staff-set-status（paid → shipped，或 pending／paid → cancelled）。其他轉換一律回 `INVALID_TRANSITION`。
+- 每次狀態轉換（含建立時的 pending）都在同一交易中新增一列 order-status-event。
+- 店員經由 order.staff-list 與 order.staff-set-status 存取任何使用者的訂單（不受 owner-key 限制）。
 
 ## 政策
 - 啟用並強制 RLS（租戶欄位由平台自動加入，不需宣告）。

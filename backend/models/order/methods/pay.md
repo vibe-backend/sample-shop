@@ -20,9 +20,10 @@
 5. simulate 為 failure 時回 `PAYMENT_DECLINED`；不寫入任何資料，訂單維持 pending，key 不保留。
 6. 執行 `UPDATE orders SET status = 'paid', payment_method = method, paid_at = now() WHERE id = 訂單 id AND user_id = ctx.user.id AND status = 'pending'`，並檢查影響列數；為 0（並發的另一筆付款已成功）回 `ORDER_NOT_PAYABLE`。
 7. 新增 payment_attempts 一列：order_id、idempotency_key、request_hash、method，user_id 用 ctx.user.id。
-8. 回傳整張訂單（id、status、payment_method、paid_at、shipping_address、items、total_cents、currency、created_at）。
+8. 新增 order_status_events 一列：status 為 paid、at 為 now()、actor 為 buyer。
+9. 回傳整張訂單（id、status、payment_method、paid_at、status_history、shipping_address、items、total_cents、currency、created_at）。
 
 ## 錯誤
 - NOT_FOUND、IDEMPOTENCY_KEY_REQUIRED、IDEMPOTENCY_KEY_REUSED、VALIDATION_FAILED、ORDER_NOT_PAYABLE、PAYMENT_DECLINED、TX_TIMEOUT、TX_CONFLICT。
 
-此 method 會寫入資料（writes: true），寫入 order（status、payment_method、paid_at）與 payment-attempt。
+此 method 會寫入資料（writes: true），寫入 order（status、payment_method、paid_at）、payment-attempt 與 order-status-event。

@@ -42,6 +42,10 @@
 | 17 | `GET /shop/v1/addresses` | JWT（本人） | — | 200 `Address[]`（預設排最前，不分頁） | 401 |
 | 18 | `POST /shop/v1/addresses` | JWT（本人） | body `AddressInput` | 201 `Address` + `Location` | 422 `VALIDATION_FAILED`、422 `ADDRESS_LIMIT` |
 | 19 | `POST /shop/v1/orders/{id}/payments` | JWT（本人） | header `Idempotency-Key`（**必填**，§10）；body `PaymentInput` | 200 `Order`（`status: 'paid'`、`payment_method`、`paid_at`） | 400 `IDEMPOTENCY_KEY_REQUIRED`、402 `PAYMENT_DECLINED`、404 `NOT_FOUND`、409 `ORDER_NOT_PAYABLE`、409 `IDEMPOTENCY_KEY_REUSED`、422 `VALIDATION_FAILED`、504、503（§13） |
+| 20 | `POST /shop/v1/orders/{id}/cancel` | JWT（本人） | body `{}`；**不需** `Idempotency-Key`（§10） | 200 `Order`（`status: 'cancelled'`；回補庫存，已付款則模擬退款，§14） | 404 `NOT_FOUND`（不存在或非本人）、409 `INVALID_TRANSITION`、504、503 |
+| 21 | `POST /shop/v1/orders/{id}/confirm-delivery` | JWT（本人） | body `{}`；**不需** `Idempotency-Key` | 200 `Order`（`status: 'delivered'`） | 404 `NOT_FOUND`、409 `INVALID_TRANSITION`、504、503 |
+| 22 | `GET /shop/v1/staff/orders` | JWT，`roles: [staff]` | query `status`(`OrderStatus`), `cursor`, `limit`(1–100) | 200 `Page<StaffOrder>`（所有使用者，新到舊） | 403 `FORBIDDEN`、422 `VALIDATION_FAILED` |
+| 23 | `PUT /shop/v1/staff/orders/{id}/status` | JWT，`roles: [staff]` | body `{ status: 'shipped' \| 'cancelled' }`；**不需** `Idempotency-Key` | 200 `StaffOrder` | 403 `FORBIDDEN`、404 `NOT_FOUND`、409 `INVALID_TRANSITION`、422 `VALIDATION_FAILED`、504、503 |
 | — | `PUT`／`DELETE /shop/v1/addresses/{id}`、`POST /shop/v1/addresses/{id}/default` | JWT（本人） | — | 規劃中（#44），v1 未實作 | — |
 
 ## 3. 資料型別
@@ -105,7 +109,11 @@ type AddressSnapshot = Pick<Address, 'recipient' | 'phone' | 'region' | 'line1'>
 type CreateOrderInput = { address_id: string };
 type PaymentMethod = 'mock_card' | 'mock_alipay';
 type PaymentInput = { method: PaymentMethod; simulate: 'success' | 'failure' };
-type Order = { id: string; status: OrderStatus; payment_method?: PaymentMethod | null; paid_at?: string | null; shipping_address?: AddressSnapshot | null; items: OrderItem[]; total_cents: number; currency: string; created_at: string };
+type OrderStatusEvent = { status: OrderStatus; at: string }; // §14，ISO 8601 UTC
+type Order = { id: string; status: OrderStatus; payment_method?: PaymentMethod | null; paid_at?: string | null; status_history?: OrderStatusEvent[]; shipping_address?: AddressSnapshot | null; items: OrderItem[]; total_cents: number; currency: string; created_at: string };
+// §14：後端一律回傳 status_history（由舊到新，至少一筆 pending）
+type StaffOrder = Order & { buyer: { id: string; display_name: string; email: string } };
+type StaffOrderStatusInput = { status: 'shipped' | 'cancelled' };
 ```
 
 ## 4. Token 與刷新策略
@@ -139,6 +147,8 @@ type Order = { id: string; status: OrderStatus; payment_method?: PaymentMethod |
 | 409 | `IDEMPOTENCY_KEY_REUSED` | 下單 | 同一 key 但 body 不同（§10） |
 | 402 | `PAYMENT_DECLINED` | 訂單付款 | 模擬付款失敗；訂單維持 `pending`，key 不保留，可重試（§13） |
 | 409 | `ORDER_NOT_PAYABLE` | 訂單付款 | 訂單已付款或已取消，或並發付款已先成功（§13） |
+| 409 | `INVALID_TRANSITION` | 取消、確認收貨、店員變更狀態 | 目前狀態不允許此轉換（含重複操作已是終止狀態的訂單），見 §14 |
+| 403 | `FORBIDDEN` | 店員端點 | 非 staff 角色 |
 | 404 | `ADDRESS_NOT_FOUND` | 下單 | `address_id` 不存在或屬於他人（§12） |
 | 412 / 428 | — | 更新商品 | `If-Match` 不符／缺少 |
 | 422 | `VALIDATION_FAILED` | 全部 | 欄位驗證失敗或未宣告欄位 |
@@ -210,6 +220,8 @@ type Order = { id: string; status: OrderStatus; payment_method?: PaymentMethod |
 
 適用：`POST /shop/v1/orders` 與 `POST /shop/v1/orders/{id}/payments`（付款的差異見 §13）。
 
+**不適用（已決定）：** `POST /shop/v1/orders/{id}/cancel`、`POST /shop/v1/orders/{id}/confirm-delivery`、`PUT /shop/v1/staff/orders/{id}/status` **不需要** `Idempotency-Key`（帶了也忽略）。這些是狀態轉換，重送時依目前狀態判斷：取消後 `cancelled` 為終止狀態，重複取消回 409 `INVALID_TRANSITION`；確認收貨、店員出貨／取消重送同樣回 409 `INVALID_TRANSITION`。前端在逾時或網路錯誤後重試時收到 409 `INVALID_TRANSITION`，應重新取得訂單（`GET /shop/v1/orders/{id}`）確認是否已成功，不應視為失敗。
+
 - `Idempotency-Key` header **必填**（1–64 字，建議 UUID v4）；缺少回 400 `IDEMPOTENCY_KEY_REQUIRED`。
 - 範圍：同一使用者（JWT `sub`）＋同一路由。
 - 同一 key、同一 body：回傳第一次建立的訂單（相同狀態碼 201 與內容），不重複扣庫存、不重複清空購物車。
@@ -263,4 +275,47 @@ type Order = { id: string; status: OrderStatus; payment_method?: PaymentMethod |
   - mock 只驗證 `method`，不驗證 `simulate`；後端兩者都驗證，不合法回 422。
   - mock 以同一 key 重送時不比較 body，也不回 `IDEMPOTENCY_KEY_REUSED`；後端依 §10 比較 body 雜湊與訂單 id，不同則回 409。
   - `types.ts` 中 `payment_method`、`paid_at` 為選填；後端一律回傳（未付款時為 `null`）。
+
+## 14. 訂單狀態流程（前端 #34，sample-shop PR #68）
+
+### 狀態轉換表
+
+| 目前狀態 | 動作 | 端點 | 執行者 | 新狀態 | 副作用 |
+| --- | --- | --- | --- | --- | --- |
+| （無） | 下單 | `POST /shop/v1/orders` | 買家 | `pending` | 扣庫存、累加 sold_count（§4b） |
+| `pending` | 付款 | `POST /shop/v1/orders/{id}/payments` | 買家 | `paid` | 新增 payment_attempt（§13） |
+| `pending` | 取消 | `POST …/orders/{id}/cancel` 或 `PUT …/staff/orders/{id}/status` | 買家（本人）或店員 | `cancelled` | 回補庫存、減 sold_count |
+| `paid` | 取消 | 同上 | 買家（本人）或店員 | `cancelled` | 回補庫存、減 sold_count、**模擬退款** |
+| `paid` | 出貨 | `PUT …/staff/orders/{id}/status`（`shipped`） | 店員 | `shipped` | — |
+| `shipped` | 確認收貨 | `POST …/orders/{id}/confirm-delivery` | 買家（本人） | `delivered` | — |
+
+- 表中以外的轉換一律回 409 `INVALID_TRANSITION`（例如 `shipped` 取消、`pending` 出貨、`paid` 確認收貨、重複取消）。`delivered`、`cancelled` 為終止狀態。
+- 檢查順序：驗證（403／422）→ 訂單存在且可存取（404）→ 狀態轉換（409）。買家操作非本人訂單回 404 `NOT_FOUND`（不透露存在與否）。
+- 並發：狀態更新皆使用 `UPDATE orders SET status = … WHERE id = … AND status = <原狀態>` 並檢查影響列數；為 0 回 409 `INVALID_TRANSITION`，因此並發的付款／取消／出貨只有一筆成功。
+
+### 取消（買家 #20／店員 #23）
+
+- 買家只能取消本人且狀態為 `pending` 或 `paid` 的訂單；店員可取消任何人 `pending` 或 `paid` 的訂單。兩者共用 `order.cancel`。
+- 同一交易（§4b：每個請求一個交易、固定寫入順序、`SET LOCAL ROLE`）依序：鎖定並更新訂單狀態 → 回補庫存（有規格回補 `product_variants.stock`，否則 `products.stock`；依 sku_id／product_id 由小到大，與下單相同順序）並將所屬商品 `sold_count` 減去數量 → 已付款時標記退款 → 新增狀態歷程。任一步失敗整筆回滾。
+- 已停用或軟刪除的商品／規格仍回補庫存。
+- **模擬退款：** 取消 `paid` 訂單時，該訂單最新一筆成功的 `payment_attempt` 寫入 `refunded_at`（目前每張訂單最多一筆成功付款）。**這只是示範用的紀錄，不呼叫任何金流、沒有任何真實款項移動。** `Order.payment_method` 與 `paid_at` 保留原值；v1 的 `Order` 不輸出退款欄位。
+
+### 店員訂單（#22／#23）
+
+- `GET /shop/v1/staff/orders`：沿用 `Page<T>`（`items`、`next_cursor`）與 cursor 分頁，依 `created_at`、`id` 由新到舊；`status` 選填篩選。每筆為 `StaffOrder`（`Order` + `buyer: { id, display_name, email }`）。非 staff 回 403。
+- `PUT /shop/v1/staff/orders/{id}/status`：body 只接受 `{ status: 'shipped' | 'cancelled' }`；其他值（包括 `paid`、`delivered`、`pending`）、缺少或多餘欄位回 422 `VALIDATION_FAILED`。`shipped` 只能由 `paid`；`cancelled` 與買家取消相同（回補庫存＋模擬退款）。回 200 `StaffOrder`。
+
+### 狀態歷程 `status_history`
+
+- 新增 model `order-status-event`（`order_status_events` 表：`order_id`、`user_id`（買家）、`status`、`at`、`actor`）。每次轉換（建立 `pending`、`paid`、`cancelled`、`shipped`、`delivered`）在同一交易中新增一筆；不可修改。
+- `Order.status_history`：`{ status, at }[]`，由舊到新，`at` 為 ISO 8601 UTC。第一筆一定是 `pending`（等於 `created_at`），最後一筆的 `status` 等於 `Order.status`。`actor` 僅供稽核，不輸出。
+- 所有回傳 `Order` 的端點（#14–#16、#19–#23）皆含 `status_history`。加入此功能前的舊訂單由遷移補一筆 `pending`（`at` = `created_at`），已付款者另補 `paid`（`at` = `paid_at`）。
+
+### 與 PR #68 `types.ts` 的差異
+
+- 路徑：需求原寫 `/shop/v1/{slug}/orders/...`、`/shop/v1/{slug}/staff/orders`；依本契約 shop 端點慣例（#10–#19 不帶 `{slug}`）與 PR #68 `real.ts`，採用 `/shop/v1/orders/{id}/cancel`、`/shop/v1/orders/{id}/confirm-delivery`、`/shop/v1/staff/orders`、`/shop/v1/staff/orders/{id}/status`。
+- `Order.status_history` 在 `types.ts` 為選填；後端一律回傳。
+- 歷程元素型別名稱依 `types.ts` 為 `OrderStatusEvent`（欄位 `status`、`at`）；model 因此命名為 `order-status-event`。
+- 店員變更狀態回傳型別依 `types.ts` 為 `StaffOrder`（含 `buyer`），不是 `Order`。
+- `types.ts` 的 `listStaffOrders` 參數只有 `status`、`cursor`；後端另接受選填 `limit`（與其他列表一致）。
 

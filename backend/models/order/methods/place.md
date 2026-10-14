@@ -21,10 +21,11 @@
 5. 扣減庫存：有 sku_id 的品項以 `UPDATE product_variants SET stock = stock - 數量 WHERE id = sku_id AND stock >= 數量`，沒有規格的品項以同樣方式更新 products；依 sku_id／product_id 由小到大的順序逐筆執行，並檢查影響列數，任一筆為 0 即回 `OUT_OF_STOCK`（整個交易回滾）。同時將對應 products 的 sold_count 加上數量（有規格時加在所屬商品）。
 6. 新增 orders 一列：status 為 pending、payment_method 與 paid_at 為 null、shipping_address 為步驟 2 地址的快照（recipient、phone、region、line1）、total_cents 為各品項單價 × 數量的總和、currency、idempotency_key。
 7. 逐項新增 order_items 快照：product_id、sku_id、sku_options、name、unit_price_cents（有規格時為規格價格）、quantity、line_total_cents。
-8. 軟刪除此使用者所有 cart_items（清空購物車）。
-9. 回傳訂單 id、status、shipping_address、items、total_cents、currency、created_at。
+8. 新增 order_status_events 一列：status 為 pending、at 為 now()、actor 為 buyer。
+9. 軟刪除此使用者所有 cart_items（清空購物車）。
+10. 回傳訂單 id、status、status_history、shipping_address、items、total_cents、currency、created_at。
 
 ## 錯誤
 - IDEMPOTENCY_KEY_REQUIRED、IDEMPOTENCY_KEY_REUSED、ADDRESS_REQUIRED、ADDRESS_NOT_FOUND、CART_EMPTY、PRODUCT_UNAVAILABLE、OUT_OF_STOCK、TX_TIMEOUT、TX_CONFLICT。
 
-此 method 會寫入資料（writes: true），寫入 product（stock、sold_count）、product-variant、order（含 shipping_address）、order-item、cart-item（應經由各自的 method）。
+此 method 會寫入資料（writes: true），寫入 product（stock、sold_count）、product-variant、order（含 shipping_address）、order-item、order-status-event、cart-item（應經由各自的 method）。
