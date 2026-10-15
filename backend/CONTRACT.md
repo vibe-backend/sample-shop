@@ -327,4 +327,3 @@ type StaffOrderStatusInput = { status: 'shipped' | 'cancelled' };
 - 歷程元素型別名稱依 `types.ts` 為 `OrderStatusEvent`（欄位 `status`、`at`）；model 因此命名為 `order-status-event`。
 - 店員變更狀態回傳型別依 `types.ts` 為 `StaffOrder`（含 `buyer`），不是 `Order`。
 - `types.ts` 的 `listStaffOrders` 參數只有 `status`、`cursor`；後端另接受選填 `limit`（與其他列表一致）。
-

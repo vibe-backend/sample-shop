@@ -3,17 +3,20 @@
 以目前使用者的購物車建立訂單。
 
 ## 交易規則
+
 - 整個請求在 runtime 提供的單一交易中執行，隔離等級 READ COMMITTED；SQL 中不得出現 BEGIN、COMMIT、ROLLBACK 或 SAVEPOINT。
 - 寫入依固定順序進行，並在 SET LOCAL ROLE 之下執行；不跨請求、不跨資料庫、不使用分散式交易。
 - 逾時：單一 SQL 5 秒、整個交易 10 秒、交易中閒置 5 秒；逾時時交易回滾並回 `TX_TIMEOUT`。
 - 發生死結（40P01）或序列化失敗（40001）時交易回滾並回 `TX_CONFLICT`（可重試）；平台不自動重試此寫入。
 
 ## 輸入
+
 - idempotency_key（必填，字串，1 至 64 字）；缺少回 `IDEMPOTENCY_KEY_REQUIRED`。
 - address_id（uuid）；缺少回 `ADDRESS_REQUIRED`。
 - request_hash（字串，請求 body 正規化後的雜湊；body 含 address_id，因此同一 key 但不同地址視為不同 body）。
 
 ## 做法（依此固定順序）
+
 1. 查詢此使用者是否已有相同 idempotency_key 的訂單；若有且 request_hash 相同，直接回傳該訂單，不重複建立；若 request_hash 不同回 `IDEMPOTENCY_KEY_REUSED`。
 2. 以 address_id 查詢 addresses（user_id = ctx.user.id、deleted_at 為 null）；查無（不存在、屬於他人或已軟刪除）回 `ADDRESS_NOT_FOUND`。
 3. 查詢購物車（cart_items，user_id = ctx.user.id、未刪除），關聯 products 與 product_variants；若為空回 `CART_EMPTY`。
@@ -26,6 +29,7 @@
 10. 回傳訂單 id、status、status_history、shipping_address、items、total_cents、currency、created_at。
 
 ## 錯誤
+
 - IDEMPOTENCY_KEY_REQUIRED、IDEMPOTENCY_KEY_REUSED、ADDRESS_REQUIRED、ADDRESS_NOT_FOUND、CART_EMPTY、PRODUCT_UNAVAILABLE、OUT_OF_STOCK、TX_TIMEOUT、TX_CONFLICT。
 
 此 method 會寫入資料（writes: true），寫入 product（stock、sold_count）、product-variant、order（含 shipping_address）、order-item、order-status-event、cart-item（應經由各自的 method）。
