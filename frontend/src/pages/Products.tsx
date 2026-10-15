@@ -516,7 +516,7 @@ export function ProductListPage() {
           )}
         </>
       )}
-      <Discovery renderProduct={(p) => <ProductCard p={p} />} />
+      {!q && <Discovery renderProduct={(p) => <ProductCard p={p} />} />}
     </>
   );
 }

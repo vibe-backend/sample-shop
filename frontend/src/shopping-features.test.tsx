@@ -113,6 +113,14 @@ describe('discovery acceptance criteria', () => {
     await screen.findByText('「文具」的搜尋結果');
     expect(input.getAttribute('value')).toBe('文具');
   });
+  it('does not show recommendations as search results when no product matches', async () => {
+    renderAt('/?q=%E5%AE%8C%E5%85%A8%E4%B8%8D%E5%AD%98%E5%9C%A8ZZZ');
+
+    await screen.findByText('找不到符合條件的商品。');
+    expect(screen.queryByRole('heading', { name: '猜你喜歡' })).toBeNull();
+    expect(screen.queryByRole('link', { name: /A5 點格筆記本/ })).toBeNull();
+  });
+
   it('clears the category route along with all query filters', async () => {
     renderAt('/category/kitchen?brand=Sample+Select');
     await screen.findByRole('heading', { name: '廚房', level: 1 });
