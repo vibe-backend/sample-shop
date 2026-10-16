@@ -23,18 +23,20 @@ jobs:
         working-directory: frontend
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: frontend/.nvmrc
       # Blocking: anything that ships to the browser must have no high/critical advisories.
       - name: Production dependencies (blocking, high+)
         run: npm audit --omit=dev --audit-level=high
-      # Report-only until the vite/vitest upgrade (#83) clears the known dev-tooling advisories.
+      # Report-only until the remaining shadcn CLI chain advisories (braces/micromatch) are cleared (#106).
       - name: All dependencies incl. dev (report only)
         run: |
           if npm audit --audit-level=high > audit.txt 2>&1; then
             echo "No high/critical advisories." >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "::warning::High/critical advisories in dev dependencies (tracked in #83); see the job summary."
+            echo "::warning::High/critical advisories in dev dependencies (tracked in #106); see the job summary."
             { echo '### npm audit (all dependencies)'; echo '```'; tail -n 40 audit.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           fi
