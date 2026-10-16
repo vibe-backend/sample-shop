@@ -13,11 +13,26 @@ updates:
     schedule:
       interval: weekly
     groups:
+      # Must stay before the catch-all `npm` group: Dependabot uses the first matching group.
+      react:
+        patterns: ["react", "react-dom", "@types/react", "@types/react-dom"]
+        update-types: ["minor", "patch"]
       npm:
         patterns: ["*"]
         update-types: ["minor", "patch"]
     ignore:
-      # Hold @vitejs/plugin-react majors until vite/vitest are upgraded together (#83).
-      # Remove this ignore once #83 is done. Minor and patch updates still flow.
+      # Hold majors until vite/vitest/plugin-react are upgraded together (#83); remove after #83.
       - dependency-name: "@vitejs/plugin-react"
+        update-types: ["version-update:semver-major"]
+      # Hold React 19 until react/react-dom and their types are upgraded together (#85); remove after #85.
+      - dependency-name: "react"
+        update-types: ["version-update:semver-major"]
+      # #85: remove after the React 19 upgrade.
+      - dependency-name: "react-dom"
+        update-types: ["version-update:semver-major"]
+      # #85: remove after the React 19 upgrade.
+      - dependency-name: "@types/react"
+        update-types: ["version-update:semver-major"]
+      # #85: remove after the React 19 upgrade.
+      - dependency-name: "@types/react-dom"
         update-types: ["version-update:semver-major"]
