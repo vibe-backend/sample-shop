@@ -1,5 +1,12 @@
-/* Vendored from shadcn@4.21.4 (export "./tailwind.css"). Do not edit by hand;
-   refresh by packing that package and copying dist/tailwind.css when upgrading. */
+/*! Vendored from shadcn@4.21.4, file "./tailwind.css" (package export -> dist/tailwind.css).
+ * Upstream: https://unpkg.com/shadcn@4.21.4/dist/tailwind.css
+ * License: https://unpkg.com/shadcn@4.21.4/LICENSE.md (full text in frontend/THIRD_PARTY_NOTICES.md)
+ *
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2023 shadcn
+ *
+ * Do not edit by hand; refresh by packing that package and copying dist/tailwind.css when upgrading.
+ */
 @theme inline {
   @keyframes accordion-down {
     from {
