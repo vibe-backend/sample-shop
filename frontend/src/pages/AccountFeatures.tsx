@@ -18,7 +18,7 @@ import { api, API_MODE, formatPrice } from '../api';
 import { useAuth } from '../auth';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
-import { ErrorNote, PageTitle, Spinner, useAsync } from '../components/ui-helpers';
+import { ErrorNote, PageTitle, Spinner, useAsync, useNow } from '../components/ui-helpers';
 import { ProductCard } from './Products';
 import { visits, removeVisit } from '../lib/browsing';
 import { SHOP_INFO } from '../lib/commerce';
@@ -320,6 +320,7 @@ export function HistoryPage() {
   );
 }
 export function CouponsPage({ compact = false }: { compact?: boolean }) {
+  const now = useNow();
   const [items, error, loading, reload] = useAsync(() => api.listCoupons(), []);
   const [tab, setTab] = useState('available');
   const [opError, setError] = useState<unknown>(null);
@@ -330,8 +331,8 @@ export function CouponsPage({ compact = false }: { compact?: boolean }) {
       (tab === 'used'
         ? c.used_order_id
         : tab === 'expired'
-          ? !c.used_order_id && Date.parse(c.expires_at) <= Date.now()
-          : !c.used_order_id && Date.parse(c.expires_at) > Date.now()),
+          ? !c.used_order_id && Date.parse(c.expires_at) <= now
+          : !c.used_order_id && Date.parse(c.expires_at) > now),
   );
   return (
     <section>
@@ -363,7 +364,7 @@ export function CouponsPage({ compact = false }: { compact?: boolean }) {
             </div>
             <Button
               size="sm"
-              disabled={!!busy || c.claimed || Date.parse(c.expires_at) <= Date.now()}
+              disabled={!!busy || c.claimed || Date.parse(c.expires_at) <= now}
               onClick={async () => {
                 setBusy(c.id);
                 try {

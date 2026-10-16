@@ -65,6 +65,3 @@ updates:
       # TypeScript 7 waits for typescript-eslint support (#94); remove after #94.
       - dependency-name: "typescript"
         update-types: ["version-update:semver-major"]
-      # Next major adds purity / set-state-in-effect rules needing fixes in Cart, Orders, Products (#95); remove after #95.
-      - dependency-name: "eslint-plugin-react-hooks"
-        update-types: ["version-update:semver-major"]

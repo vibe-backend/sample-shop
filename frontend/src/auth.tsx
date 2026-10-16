@@ -18,7 +18,8 @@ const Ctx = createContext<AuthCtx | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [me, setMe] = useState<Me | null>(null);
-  const [ready, setReady] = useState(false);
+  // Without a token there is nothing to load, so the session is ready on first render.
+  const [ready, setReady] = useState(() => !tokenStore.get());
   const [cartCount, setCartCount] = useState(0);
 
   const refreshCart = useCallback(() => {
@@ -46,9 +47,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [refreshCart]);
 
+  // Initial session load. State is only set from promise callbacks (react-hooks/set-state-in-effect).
   useEffect(() => {
-    loadMe();
-  }, [loadMe]);
+    if (!tokenStore.get()) {
+      refreshCart(); // guest cart; setState happens in its promise callbacks
+      return;
+    }
+    let live = true;
+    api
+      .me()
+      .then((m) => {
+        if (!live) return;
+        setMe(m);
+        refreshCart(); // only once the token is known to be valid, as before
+      })
+      .catch(() => {
+        if (!live) return;
+        tokenStore.clear();
+        setMe(null);
+      })
+      .finally(() => live && setReady(true));
+    return () => {
+      live = false;
+    };
+  }, [refreshCart]);
 
   const value: AuthCtx = {
     me,

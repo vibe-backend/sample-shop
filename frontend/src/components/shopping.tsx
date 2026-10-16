@@ -6,7 +6,7 @@ import { api, API_MODE, formatPrice, type Product } from '../api';
 import { useAuth } from '../auth';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
-import { ErrorNote, useAsync } from './ui-helpers';
+import { ErrorNote, useAsync, useDepsChanged } from './ui-helpers';
 import { placeholderImage } from '../api/seed';
 import { CATEGORY_TREE, SHOP_INFO, campaignActive } from '../lib/commerce';
 import { readLocal, writeLocal, searches, removeSearch, recordSearch, visits, removeVisit } from '../lib/browsing';
@@ -24,7 +24,7 @@ export function ProductImage({
 }) {
   const fallback = placeholderImage('🛍️', 30);
   const [failed, setFailed] = useState(false);
-  useEffect(() => setFailed(false), [src]);
+  if (useDepsChanged([src])) setFailed(false);
   return (
     <img
       loading={loading}
@@ -38,7 +38,7 @@ export function ProductImage({
 export function Gallery({ product, skuImage }: { product: Product; skuImage?: string | null }) {
   const [index, setIndex] = useState(0);
   const [touch, setTouch] = useState<number | null>(null);
-  useEffect(() => setIndex(0), [product.id, skuImage]);
+  if (useDepsChanged([product.id, skuImage])) setIndex(0);
   const images = skuImage ? [skuImage, ...product.image_urls.filter((url) => url !== skuImage)] : product.image_urls;
   const move = (n: number) => setIndex((i) => (i + n + Math.max(1, images.length)) % Math.max(1, images.length));
   return (
@@ -194,7 +194,7 @@ export function Promotion({ subtotal }: { subtotal: number }) {
   );
 }
 export function Campaign({ p }: { p: Product }) {
-  const [now, setNow] = useState(Date.now());
+  const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (!p.campaign) return;
     const timer = setInterval(() => setNow(Date.now()), 1000);
@@ -303,7 +303,7 @@ export const SearchSuggestions = forwardRef<SearchSuggestionsHandle, { value: st
           ...new Set(products?.items.filter((p) => p.active && p.name.includes(value.trim())).map((p) => p.name) ?? []),
         ].slice(0, 8)
       : [...new Set([...searches(), '咖啡', '文具', '家居'])].slice(0, 13);
-    useEffect(() => setIndex(-1), [value, tick]);
+    if (useDepsChanged([value, tick])) setIndex(-1);
     const move = (direction: number) =>
       setIndex((i) =>
         !options.length
@@ -416,13 +416,12 @@ export function ChatButton({ orderId }: { orderId?: string }) {
   const key = `shop.chat.v1.${me?.id ?? 'guest'}.${orderId ?? 'shop'}`;
   const [open, setOpen] = useState(false);
   const [text, setText] = useState('');
-  const [lines, setLines] = useState<ChatLine[]>([]);
-  useEffect(() => {
+  const load = () => {
     const saved = readLocal<ChatLine[]>(key, []);
-    setLines(
-      Array.isArray(saved) ? saved.filter((l) => typeof l?.text === 'string' && typeof l.seller === 'boolean') : [],
-    );
-  }, [key]);
+    return Array.isArray(saved) ? saved.filter((l) => typeof l?.text === 'string' && typeof l.seller === 'boolean') : [];
+  };
+  const [lines, setLines] = useState<ChatLine[]>(load);
+  if (useDepsChanged([key])) setLines(load());
   if (API_MODE !== 'mock')
     return (
       <Button variant="outline" size="sm" asChild>

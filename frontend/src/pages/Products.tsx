@@ -19,7 +19,7 @@ import { api, API_MODE, formatPrice, type Product, type ProductSort } from '../a
 import { findVariant, hasVariants, isValueAvailable, missingOptions, priceRange, type Selection } from '@/lib/sku';
 import { cn } from '@/lib/utils';
 import { useAuth } from '../auth';
-import { Empty, ErrorNote, Spinner, useAsync } from '../components/ui-helpers';
+import { Empty, ErrorNote, Spinner, useAsync, useDepsChanged } from '../components/ui-helpers';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -274,10 +274,12 @@ export function ProductListPage() {
   };
   const key = JSON.stringify(query);
 
-  useEffect(() => {
-    let live = true;
+  if (useDepsChanged([key])) {
     setLoading(true);
     setError(null);
+  }
+  useEffect(() => {
+    let live = true;
     api
       .listProducts(JSON.parse(key))
       .then((p) => {
@@ -593,13 +595,13 @@ export function ProductDetailPage() {
   const [msg, setMsg] = useState('');
   const [hint, setHint] = useState('');
   const [addErr, setAddErr] = useState<unknown>(null);
-  useEffect(() => {
+  if (useDepsChanged([id])) {
     setQty(1);
     setSel({});
     setMsg('');
     setHint('');
     setAddErr(null);
-  }, [id]);
+  }
 
   if (loading) return <Spinner />;
   if (!p) return <ErrorNote error={error} />;
