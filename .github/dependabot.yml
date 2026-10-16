@@ -46,3 +46,7 @@ updates:
       # #86: remove after the ESLint 10 upgrade.
       - dependency-name: "@eslint/js"
         update-types: ["version-update:semver-major"]
+      # @types/node's major must track the actual Node runtime (CI node-version / .nvmrc, and any
+      # engines field), not the latest release. Bump it by hand with the runtime (#87).
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
