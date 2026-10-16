@@ -16,8 +16,7 @@
     "skipLibCheck": true,
     "isolatedModules": true,
     "types": [
-      "vite/client",
-      "node"
+      "vite/client"
     ],
     "baseUrl": ".",
     "paths": {
@@ -27,9 +26,10 @@
     }
   },
   "include": [
-    "src",
-    "vite.config.ts",
-    "build-env.ts",
-    "build-env.test.ts"
+    "src"
+  ],
+  "exclude": [
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx"
   ]
 }

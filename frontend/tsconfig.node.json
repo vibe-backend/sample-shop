@@ -1,0 +1,10 @@
+{
+  // Build tooling that runs on Node 22.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2022"],
+    "types": ["node"]
+  },
+  "include": ["vite.config.ts", "build-env.ts"],
+  "exclude": []
+}
