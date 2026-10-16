@@ -1,15 +1,16 @@
-# Third-party notices
+Third-party notices
+===================
 
 This project includes third-party material under the licenses below.
 
-## shadcn
+shadcn
+------
 
-- Package: `shadcn@4.21.4`, file `./tailwind.css` (`dist/tailwind.css`)
-- Vendored as: `src/styles/shadcn-tailwind.css`
-- Upstream: <https://unpkg.com/shadcn@4.21.4/dist/tailwind.css>
-- License: <https://unpkg.com/shadcn@4.21.4/LICENSE.md>
+Package:     shadcn@4.21.4, file "./tailwind.css" (dist/tailwind.css)
+Vendored as: src/styles/shadcn-tailwind.css
+Upstream:    https://unpkg.com/shadcn@4.21.4/dist/tailwind.css
+License:     https://unpkg.com/shadcn@4.21.4/LICENSE.md
 
-```text
 MIT License
 
 Copyright (c) 2023 shadcn
@@ -31,4 +32,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-```

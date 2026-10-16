@@ -12,7 +12,8 @@
     "preview": "vite preview",
     "typecheck": "tsc -b",
     "lint": "eslint . && tsc -b && tsc -p tsconfig.node.json && tsc -p tsconfig.test.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "check:notices": "node scripts/check-dist-notices.mjs"
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",
