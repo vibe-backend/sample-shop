@@ -1,20 +1,45 @@
 # address
 
-使用者的收貨地址簿，存放在 main 資料庫的 `addresses` 表。欄位名稱與前端 sample-shop PR #64 `types.ts` 的 `Address` 一致。
+## Table
 
-## 欄位
+使用者的收貨地址簿。欄位名稱與前端 sample-shop PR #64 types.ts 的 Address 一致。lock 正文由標題 `## Table` 開始，其後只接 `## Fields`、`## CRUD`、`## Policies`。表名只寫在這一節的 table 鍵。
 
-- user_id：uuid，必填；由平台以 ctx.user.id 填入，呼叫者不可提供。
-- recipient：字串，必填，去除前後空白後 1 至 50 字。
-- phone：字串，必填；8 位香港電話號碼，首位 2 至 9。儲存前先正規化：移除空白與連字號，只有整段符合 `^(?:\+852|852)([2-9][0-9]{7})$` 時才移除國碼。8 位號碼如 `85212345` 必須原樣保留；其餘輸入最後須符合 `^[2-9][0-9]{7}$`。
-- region：字串，必填，只能是 香港島、九龍、新界、離島 之一。
-- line1：字串，必填，詳細地址，去除前後空白後 5 至 200 字。
-- is_default：布林，必填，預設 false。只經由 address.create（第一個地址或指定預設）、address.set-default 與 address.remove（遞補）變更。
-- deleted_at：時間戳記，選填，預設 null；由 address.remove 寫入（軟刪除）。
+- provider: main
+- table: addresses
+- owner-key: user_id
 
-## 擁有權
+owner-key 為 user_id：使用者只能讀寫自己的地址。
 
-- owner-key 為 `user_id`：使用者只能讀寫自己的地址。
+## Fields
+
+Fields 用表格，欄位是 name、type、rules、system。type 只可填 uuid、string、string[]、integer、number、boolean、timestamp、password、json、bytes，照下表抄寫。
+
+| name | type | rules | system |
+| --- | --- | --- | --- |
+| user_id | uuid | required | no |
+| recipient | string | required, min: 1, max: 50 | no |
+| phone | string | required | no |
+| region | string | required | no |
+| line1 | string | required, min: 5, max: 200 | no |
+| is_default | boolean | required, default: false | no |
+
+- user_id 由平台以 ctx.user.id 填入，呼叫者不可提供。
+- recipient 去除前後空白後 1 至 50 字。
+- phone 是 8 位香港電話號碼，首位 2 至 9。儲存前先正規化：移除空白與連字號，只有整段符合 `^(?:\+852|852)([2-9][0-9]{7})$` 時才移除國碼。8 位號碼如 `85212345` 必須原樣保留；其餘輸入最後須符合 `^[2-9][0-9]{7}$`。
+- region 只能是 香港島、九龍、新界、離島 之一。
+- line1 是詳細地址，去除前後空白後 5 至 200 字。
+- is_default 預設 false。只經由 address.create（第一個地址或指定預設）、address.set-default 與 address.remove（遞補）變更。
+- 平台軟刪除欄位 deleted_at 的 type 是 timestamp，預設 null，由 address.remove 寫入。不要宣告 tenant_id。
+
+## CRUD
+
+不注入內建 list、update、delete。這一節在 lock 寫 (none)。存取只經由 address.list-mine、address.create、address.update、address.remove（軟刪除）、address.set-default。
+
+訂單的 orders.shipping_address 是下單時的快照（不存 address_id 參照），修改或刪除地址不影響既有訂單。
+
+## Policies
+
+啟用並強制 RLS。租戶欄位由平台自動加入，不需宣告。
 
 ## 規則
 
@@ -24,12 +49,3 @@
 - 每位使用者最多一個 is_default 為 true 的地址；已刪除的地址 is_default 一律為 false。
 - 有未刪除地址時恰有一個預設；沒有未刪除地址時沒有預設。
 - 已軟刪除的地址對所有操作（列表、修改、刪除、設為預設、下單）都視為不存在，回 `ADDRESS_NOT_FOUND`。
-
-## CRUD
-
-- 只經由 address.list-mine、address.create、address.update、address.remove（軟刪除）、address.set-default 存取；不開放內建 update、delete。
-- 訂單的 orders.shipping_address 是下單時的快照（不存 address_id 參照），修改或刪除地址不影響既有訂單。
-
-## 政策
-
-- 啟用並強制 RLS（租戶欄位由平台自動加入，不需宣告）。

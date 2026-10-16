@@ -1,21 +1,44 @@
 # product-variant
 
-商品規格（SKU），存放在 main 資料庫的 `product_variants` 表。屬於整個商店（租戶）共享的資料。
+## Table
 
-## 欄位
+商品規格（SKU），屬於整個商店（租戶）共享的資料，沒有列擁有者。lock 正文由標題 `## Table` 開始，其後只接 `## Fields`、`## CRUD`、`## Policies`。表名只寫在這一節的 table 鍵。
 
-- product_id：uuid，必填，指向 product。
-- options：json 類型，必填；內容為物件，鍵為規格名稱、值為規格值，例如 {顏色: 黑色, 尺寸: 大}；鍵必須對應 product.options 的 name，值必須是該組 values 之一。
-- price_cents：整數，必填，最小 0。
-- stock：整數，必填，最小 0，預設 0。
-- image_url：字串，選填，最長 500 字。
-- active：布林，必填，預設 true。
+- provider: main
+- table: product_variants
+
+## Fields
+
+Fields 用表格，欄位是 name、type、rules、system。type 只可填 uuid、string、string[]、integer、number、boolean、timestamp、password、json、bytes，照下表抄寫。
+
+| name | type | rules | system |
+| --- | --- | --- | --- |
+| product_id | uuid | required | no |
+| options | json | required | no |
+| price_cents | integer | required, min: 0 | no |
+| stock | integer | required, min: 0, default: 0 | no |
+| image_url | string | nullable, max: 500 | no |
+| active | boolean | required, default: true | no |
+
+- product_id 指向 product。
+- options 必填，type 是 json。內容把規格名稱對到所選的值：每個鍵必須是 product.options 某一組的 name，每個值必須是該組 values 裡的一個 string。例如顏色對到黑色，尺寸對到大。
+- image_url 選填。
 
 ## CRUD
 
 - create、get、update（以 If-Match 樂觀鎖）、delete（軟刪除）。
 - list：依 product_id 篩選，每頁最多 100 筆。
 
-## 政策
+對應的 CRUD 表：
 
-- 啟用並強制 RLS（租戶欄位由平台自動加入，不需宣告）。
+| method | options |
+| --- | --- |
+| create | - |
+| get | - |
+| list | max-page-size: 100, filter: [product_id] |
+| update | optimistic-lock: if-match |
+| delete | soft: true |
+
+## Policies
+
+啟用並強制 RLS。租戶欄位由平台自動加入，不需宣告。
