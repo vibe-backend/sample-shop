@@ -3,7 +3,6 @@
     "target": "ES2020",
     "lib": [
       "ES2020",
-      "ES2022",
       "DOM",
       "DOM.Iterable"
     ],
@@ -17,8 +16,7 @@
     "skipLibCheck": true,
     "isolatedModules": true,
     "types": [
-      "vite/client",
-      "node"
+      "vite/client"
     ],
     "baseUrl": ".",
     "paths": {
@@ -28,9 +26,10 @@
     }
   },
   "include": [
-    "src",
-    "vite.config.ts",
-    "build-env.ts",
-    "build-env.test.ts"
+    "src"
+  ],
+  "exclude": [
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx"
   ]
 }
