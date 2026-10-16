@@ -20,7 +20,7 @@
 
 ## CRUD
 
-- 只經由 order.place、order.pay、order.cancel、order.confirm-delivery、order.staff-set-status 新增；不開放 list、update、delete。
+- 只經由 order.place、order.pay、order.cancel、order.confirm-delivery、order.staff-set-status 與 tenant expiry worker 新增；不開放 list、update、delete。
 
 ## 政策
 

@@ -14,13 +14,17 @@
 - paid_at：時間戳記，選填，預設 null；付款成功時由 order.pay 寫入。
 - request_hash：字串，必填，最長 64 字（建立訂單時請求 body（含 address_id）的雜湊，用於判斷同 key 不同 body）。
 
-## 規則
+## 冪等與庫存保留
 
 - (user_id, idempotency_key) 唯一，供同一使用者的並發重送使用。order.place 先鎖 user 列再重查 key，然後與 request_hash 同一筆 INSERT 寫入；不可只在查詢時比較 request_hash。
+- reservation_expires_at：時間戳記，選填；新訂單為資料庫 now() + 30 分鐘，舊訂單遷移須補期限。
+- reservation_active：布林，必填，預設 false；新 pending 訂單為 true，付款、取消或逾期在同一交易中改為 false。
+- cancellation_reason：字串，選填，最多 200 字；逾期填付款逾時。
+- 庫存語意與鎖順序見 CONTRACT §15；只有持有此訂單列鎖並成功轉換狀態者可以釋放／提交保留。
 
 ## 輸出
 
-- get 一併回傳 items（order_items 快照，欄位同 order-item）與 status_history（order_status_events 的 status、at，由舊到新，ISO 8601 UTC）。
+- get 一併回傳 reservation_expires_at、reservation_active、cancellation_reason、items（order_items 快照，欄位同 order-item）與 status_history（order_status_events 的 status、at，由舊到新，ISO 8601 UTC）。
 
 ## 擁有權
 

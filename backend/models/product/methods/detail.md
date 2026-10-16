@@ -14,7 +14,7 @@
 
 ## 輸出
 
-- 商品所有欄位，加上 options（陣列，沒有規格時為空陣列）與 variants（陣列，每筆含 id、options、price_cents、stock、in_stock、image_url）。
+- 商品所有欄位，加上 options（陣列，沒有規格時為空陣列）與 variants（陣列，每筆含 id、options、price_cents、stock、in_stock、image_url、reserved_stock）。店員詳情另回傳精確 ETag，前端更新時原樣帶 If-Match。
 
 ## 錯誤
 
