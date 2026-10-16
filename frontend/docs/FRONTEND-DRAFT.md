@@ -49,11 +49,11 @@ Backend PR #62 remains a separate draft. Follow-up #71 updates CONTRACT.md secti
 Run from frontend:
 
 ```sh
-npm ci
-npm run lint
-npm test
-VITE_API_MODE=mock npm run build
-VITE_API_MODE=real npm run build
+pnpm install --frozen-lockfile
+pnpm run lint
+pnpm test
+VITE_API_MODE=mock pnpm run build
+VITE_API_MODE=real pnpm run build
 ```
 
 API tests cover guest merge, buy-now isolation, selected checkout, totals, coupon reuse/expiry, reservation/pay/cancel races, credential migration, review ownership, return transitions and SKU optimistic versions.

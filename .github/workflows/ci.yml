@@ -44,17 +44,21 @@ jobs:
           [ -d "$d" ] || echo "::notice::$d/ does not exist yet; skipping."
       # Node (e.g. static frontend tooling)
       - if: steps.detect.outputs.node == 'true'
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          package_json_file: ${{ matrix.component }}/package.json
+      - if: steps.detect.outputs.node == 'true'
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: ${{ matrix.component }}/.nvmrc
-          cache: npm
-          cache-dependency-path: ${{ matrix.component }}/package-lock.json
+          cache: pnpm
+          cache-dependency-path: ${{ matrix.component }}/pnpm-lock.yaml
       - if: steps.detect.outputs.node == 'true'
         working-directory: ${{ matrix.component }}
         run: |
-          npm ci
-          npm run lint --if-present
-          npm test --if-present
+          pnpm install --frozen-lockfile
+          pnpm run --if-present lint
+          pnpm run --if-present test
       # Rust (backend using the SDK)
       - if: steps.detect.outputs.rust == 'true'
         uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable (branch, no release tags)

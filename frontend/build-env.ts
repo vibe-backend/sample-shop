@@ -5,7 +5,7 @@ export const API_MODES = ['mock', 'real'] as const;
  * silently ship mock mode (which bundles demo credentials). Dev servers default to mock.
  * Returns an error message, or null when the environment is acceptable.
  */
-export function checkApiMode(command: 'build' | 'serve', mode: string | undefined): string | null {
+export function checkApiMode(command: string, mode: string | undefined): string | null {
   if (command !== 'build') return null;
   if (mode === undefined || mode === '') {
     return 'VITE_API_MODE is not set. Production builds must set it explicitly: VITE_API_MODE=real (with VITE_API_BASE_URL) or VITE_API_MODE=mock for a demo build.';

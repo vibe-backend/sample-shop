@@ -14,9 +14,9 @@ permissions:
 
 jobs:
   # actions/dependency-review-action is not used yet: it needs the repo's Dependency graph, which is
-  # disabled (settings change, admin only). npm audit below already runs on every PR's lockfile.
-  npm-audit:
-    name: npm audit (frontend)
+  # disabled (settings change, admin only). pnpm audit below already runs on every PR's lockfile.
+  pnpm-audit:
+    name: pnpm audit (frontend)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -25,11 +25,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          package_json_file: frontend/package.json
+      # No cache because pnpm audit needs no install.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: frontend/.nvmrc
       # Blocking: anything that ships to the browser must have no high/critical advisories.
       - name: Production dependencies (blocking, high+)
-        run: npm audit --omit=dev --audit-level=high
+        run: pnpm audit --prod --audit-level=high
       - name: All dependencies incl. dev (blocking, high+)
-        run: npm audit --audit-level=high
+        run: pnpm audit --audit-level=high
