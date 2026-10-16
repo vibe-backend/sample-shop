@@ -29,12 +29,6 @@ jobs:
       # Blocking: anything that ships to the browser must have no high/critical advisories.
       - name: Production dependencies (blocking, high+)
         run: npm audit --omit=dev --audit-level=high
-      # Report-only until the vite/vitest upgrade (#83) clears the known dev-tooling advisories.
-      - name: All dependencies incl. dev (report only)
-        run: |
-          if npm audit --audit-level=high > audit.txt 2>&1; then
-            echo "No high/critical advisories." >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "::warning::High/critical advisories in dev dependencies (tracked in #83); see the job summary."
-            { echo '### npm audit (all dependencies)'; echo '```'; tail -n 40 audit.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
-          fi
+      # Blocking once shadcn CLI highs are cleared (#106). Needs 產品經理 approval for this CI-config change.
+      - name: All dependencies incl. dev (blocking, high+)
+        run: npm audit --audit-level=high
