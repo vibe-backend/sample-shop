@@ -47,10 +47,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [refreshCart]);
 
+  // Initial session load. State is only set from promise callbacks (react-hooks/set-state-in-effect).
   useEffect(() => {
-    if (tokenStore.get()) void loadMe();
-    else refreshCart();
-  }, [loadMe, refreshCart]);
+    refreshCart();
+    if (!tokenStore.get()) return;
+    let live = true;
+    api
+      .me()
+      .then((m) => live && setMe(m))
+      .catch(() => {
+        if (!live) return;
+        tokenStore.clear();
+        setMe(null);
+      })
+      .finally(() => live && setReady(true));
+    return () => {
+      live = false;
+    };
+  }, [refreshCart]);
 
   const value: AuthCtx = {
     me,
