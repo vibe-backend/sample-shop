@@ -19,7 +19,13 @@ updates:
         update-types: ["minor", "patch"]
       # Also before the catch-all: ESLint core, configs and plugins move together.
       eslint:
-        patterns: ["eslint", "@eslint/*", "eslint-plugin-*", "typescript-eslint"]
+        # typescript is here so it moves with typescript-eslint, whose peer range gates TS majors (#94).
+        patterns: ["eslint", "@eslint/*", "eslint-plugin-*", "typescript-eslint", "typescript"]
+        update-types: ["minor", "patch"]
+      # vite + vitest + their official plugins (incl. @vitejs/plugin-react) upgrade together (#83).
+      # Before the catch-all; plugin-react matches no earlier group, so it lands here only.
+      vite:
+        patterns: ["vite", "vitest", "@vitejs/*", "@vitest/*"]
         update-types: ["minor", "patch"]
       npm:
         patterns: ["*"]
@@ -49,4 +55,16 @@ updates:
       # @types/node's major must track the actual Node runtime (CI node-version / .nvmrc, and any
       # engines field), not the latest release. Bump it by hand with the runtime (#87).
       - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      # Hold Vite 8 / Vitest majors until upgraded together with plugin-react (#83); remove after #83.
+      - dependency-name: "vite"
+        update-types: ["version-update:semver-major"]
+      # #83: remove after the vite/vitest upgrade.
+      - dependency-name: "vitest"
+        update-types: ["version-update:semver-major"]
+      # TypeScript 7 waits for typescript-eslint support (#94); remove after #94.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      # Next major adds purity / set-state-in-effect rules needing fixes in Cart, Orders, Products (#95); remove after #95.
+      - dependency-name: "eslint-plugin-react-hooks"
         update-types: ["version-update:semver-major"]
