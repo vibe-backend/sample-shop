@@ -77,7 +77,30 @@ describe('AuthProvider session restore (#108)', () => {
     expect(result.current.cartCount).toBe(0);
   });
 
-  it('live guard: StrictMode remount does not refreshCart from a stale me() resolution', async () => {
+  it('live guard: unmount before me() resolves does not refreshCart', async () => {
+    tokenStore.set({ access_token: 'tok', expires_at: '2999-01-01T00:00:00Z' });
+
+    let resolveMe!: (m: Me) => void;
+    const mePromise = new Promise<Me>((resolve) => {
+      resolveMe = resolve;
+    });
+    vi.spyOn(api, 'me').mockReturnValue(mePromise);
+    const getCart = vi.spyOn(api, 'getCart').mockResolvedValue(emptyCart);
+
+    const { unmount } = renderHook(() => useAuth(), { wrapper });
+    expect(api.me).toHaveBeenCalledTimes(1);
+    unmount();
+
+    await act(async () => {
+      resolveMe(meOk);
+      await mePromise;
+    });
+
+    // Cleanup set live=false; stale resolution must not touch cart.
+    expect(getCart).not.toHaveBeenCalled();
+  });
+
+  it('live guard under StrictMode: refreshCart runs only once for the live mount', async () => {
     tokenStore.set({ access_token: 'tok', expires_at: '2999-01-01T00:00:00Z' });
 
     const resolvers: Array<(m: Me) => void> = [];
@@ -91,25 +114,19 @@ describe('AuthProvider session restore (#108)', () => {
 
     const { result } = renderHook(() => useAuth(), { wrapper: strictWrapper });
 
-    // React 18 StrictMode: mount → cleanup → remount ⇒ two in-flight me() calls.
-    await waitFor(() => expect(resolvers.length).toBe(2));
-    expect(getCart).not.toHaveBeenCalled();
+    await waitFor(() => expect(resolvers.length).toBeGreaterThanOrEqual(1));
 
-    // Stale (first) resolution must be ignored by the live guard.
+    // Resolve every in-flight me() (StrictMode may have mounted twice in dev).
+    // Only the live effect should call refreshCart — at most once.
     await act(async () => {
-      resolvers[0](meOk);
+      for (const resolve of resolvers) resolve(meOk);
     });
-    expect(getCart).not.toHaveBeenCalled();
 
-    // Live mount resolution refreshes the cart once.
-    await act(async () => {
-      resolvers[1](meOk);
-    });
     await waitFor(() => {
       expect(result.current.ready).toBe(true);
       expect(result.current.me).toEqual(meOk);
-      expect(getCart).toHaveBeenCalledTimes(1);
     });
+    expect(getCart).toHaveBeenCalledTimes(1);
   });
 
   it('without a token, is ready immediately and loads the guest cart', async () => {
