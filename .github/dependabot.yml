@@ -31,9 +31,6 @@ updates:
         patterns: ["*"]
         update-types: ["minor", "patch"]
     ignore:
-      # Hold majors until vite/vitest/plugin-react are upgraded together (#83); remove after #83.
-      - dependency-name: "@vitejs/plugin-react"
-        update-types: ["version-update:semver-major"]
       # Hold ESLint 10 until eslint and @eslint/js are upgraded together (#86); remove after #86.
       - dependency-name: "eslint"
         update-types: ["version-update:semver-major"]
@@ -43,12 +40,6 @@ updates:
       # @types/node's major must track the actual Node runtime (CI node-version / .nvmrc, and any
       # engines field), not the latest release. Bump it by hand with the runtime (#87).
       - dependency-name: "@types/node"
-        update-types: ["version-update:semver-major"]
-      # Hold Vite 8 / Vitest majors until upgraded together with plugin-react (#83); remove after #83.
-      - dependency-name: "vite"
-        update-types: ["version-update:semver-major"]
-      # #83: remove after the vite/vitest upgrade.
-      - dependency-name: "vitest"
         update-types: ["version-update:semver-major"]
       # TypeScript 7 waits for typescript-eslint support (#94); remove after #94.
       - dependency-name: "typescript"
