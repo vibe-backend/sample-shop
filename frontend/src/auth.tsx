@@ -18,7 +18,8 @@ const Ctx = createContext<AuthCtx | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [me, setMe] = useState<Me | null>(null);
-  const [ready, setReady] = useState(false);
+  // Without a token there is nothing to load, so the session is ready on first render.
+  const [ready, setReady] = useState(() => !tokenStore.get());
   const [cartCount, setCartCount] = useState(0);
 
   const refreshCart = useCallback(() => {
@@ -47,8 +48,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [refreshCart]);
 
   useEffect(() => {
-    loadMe();
-  }, [loadMe]);
+    if (tokenStore.get()) void loadMe();
+    else refreshCart();
+  }, [loadMe, refreshCart]);
 
   const value: AuthCtx = {
     me,

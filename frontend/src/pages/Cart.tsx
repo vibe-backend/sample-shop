@@ -15,7 +15,7 @@ import {
 import { AddAddressButton, AddressDialog, AddressPicker } from '../components/address';
 import { PaymentPicker } from '../components/payment';
 import { useAuth } from '../auth';
-import { Empty, ErrorNote, PageTitle, Spinner, useAsync } from '../components/ui-helpers';
+import { Empty, ErrorNote, PageTitle, Spinner, useAsync, useDepsChanged, useNow } from '../components/ui-helpers';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Textarea } from '../components/ui/textarea';
@@ -57,10 +57,10 @@ export function CartPage() {
   const [opErr, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
   const [picked, setPicked] = useState<string[] | null>(null);
-  useEffect(() => {
+  if (useDepsChanged([me?.id])) {
     setCart(null);
     setPicked(null);
-  }, [me?.id]);
+  }
   const c = cart ?? loaded;
   async function op(fn: () => Promise<Cart>) {
     setBusy(true);
@@ -280,6 +280,7 @@ export async function checkoutCart(params: URLSearchParams): Promise<Cart> {
   return c;
 }
 export function CheckoutPage() {
+  const now = useNow();
   const { me, refreshCart } = useAuth();
   const nav = useNavigate();
   const [params] = useSearchParams();
@@ -318,7 +319,7 @@ export function CheckoutPage() {
   const usableCoupon =
     coupon?.claimed &&
     !coupon.used_order_id &&
-    Date.parse(coupon.expires_at) > Date.now() &&
+    Date.parse(coupon.expires_at) > now &&
     cart.subtotal_cents >= coupon.min_cents
       ? coupon
       : undefined;
@@ -433,7 +434,7 @@ export function CheckoutPage() {
                   >
                     <option value="">不使用</option>
                     {coupons
-                      ?.filter((c) => c.claimed && !c.used_order_id && Date.parse(c.expires_at) > Date.now())
+                      ?.filter((c) => c.claimed && !c.used_order_id && Date.parse(c.expires_at) > now)
                       .map((c) => (
                         <option key={c.id} value={c.id}>
                           {c.name}

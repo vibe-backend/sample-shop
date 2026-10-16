@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { CircleCheck } from 'lucide-react';
 import { api, formatPrice, type Order, type OrderStatus } from '../api';
-import { Empty, ErrorNote, PageTitle, Spinner, useAsync } from '../components/ui-helpers';
+import { Empty, ErrorNote, PageTitle, Spinner, useAsync, useDepsChanged } from '../components/ui-helpers';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -61,7 +61,6 @@ export function OrdersPage() {
   const [error, setError] = useState<unknown>(null);
 
   function load(c?: string, isLive: () => boolean = () => true) {
-    setLoading(true);
     api
       .listOrders(
         c,
@@ -79,9 +78,12 @@ export function OrdersPage() {
       .catch((e) => isLive() && setError(e))
       .finally(() => isLive() && setLoading(false));
   }
+  if (useDepsChanged([selected])) {
+    setLoading(true);
+    setError(null);
+  }
   useEffect(() => {
     let live = true;
-    setError(null);
     load(undefined, () => live);
     return () => {
       live = false;
@@ -159,7 +161,10 @@ export function OrdersPage() {
       {loading && <Spinner />}
       {cursor && !loading && (
         <div className="mt-6 text-center">
-          <Button variant="outline" size="lg" onClick={() => load(cursor)}>
+          <Button variant="outline" size="lg" onClick={() => {
+            setLoading(true);
+            load(cursor);
+          }}>
             載入更多
           </Button>
         </div>

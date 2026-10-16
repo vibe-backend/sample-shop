@@ -12,7 +12,7 @@ import { SearchSuggestions, StoreCard, type SearchSuggestionsHandle } from './co
 import { recordSearch } from './lib/browsing';
 import { AddressBookPage } from './pages/Addresses';
 import { StaffOrdersPage } from './pages/StaffOrders';
-import { useEffect, useState, useRef, type FormEvent } from 'react';
+import { useState, useRef, type FormEvent } from 'react';
 import { Link, NavLink, Route, Routes, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ChevronRight,
@@ -30,7 +30,7 @@ import {
 } from 'lucide-react';
 import { API_MODE, resetMockData } from './api';
 import { useAuth } from './auth';
-import { RequireAuth } from './components/ui-helpers';
+import { RequireAuth, useDepsChanged } from './components/ui-helpers';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -99,7 +99,7 @@ function HeaderSearch({ className }: { className?: string }) {
   const [draft, setDraft] = useState(q);
   const [focused, setFocused] = useState(false);
   const suggestions = useRef<SearchSuggestionsHandle>(null);
-  useEffect(() => setDraft(q), [q]);
+  if (useDepsChanged([q])) setDraft(q);
   function submit(e: FormEvent) {
     e.preventDefault();
     recordSearch(draft);
