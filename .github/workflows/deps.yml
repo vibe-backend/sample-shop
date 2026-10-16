@@ -31,6 +31,5 @@ jobs:
       # Blocking: anything that ships to the browser must have no high/critical advisories.
       - name: Production dependencies (blocking, high+)
         run: npm audit --omit=dev --audit-level=high
-      # Blocking once shadcn CLI highs are cleared (#106). Needs 產品經理 approval for this CI-config change.
       - name: All dependencies incl. dev (blocking, high+)
         run: npm audit --audit-level=high
