@@ -88,6 +88,14 @@ const fromAddress = (a: Address): AddressInput => ({
   is_default: a.is_default,
 });
 
+function FieldError({ errors, k }: { errors: AddressErrors; k: keyof AddressErrors }) {
+  return errors[k] ? (
+    <p id={`addr-${k}-err`} className="text-xs text-destructive">
+      {errors[k]}
+    </p>
+  ) : null;
+}
+
 /** Add-address dialog; validates client-side with the same rules as the mock server. */
 export function AddressDialog({
   open,
@@ -141,13 +149,6 @@ export function AddressDialog({
     'aria-invalid': !!errors[k] || undefined,
     'aria-describedby': errors[k] ? `addr-${k}-err` : undefined,
   });
-  const Err = ({ k }: { k: keyof AddressErrors }) =>
-    errors[k] ? (
-      <p id={`addr-${k}-err`} className="text-xs text-destructive">
-        {errors[k]}
-      </p>
-    ) : null;
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
@@ -167,7 +168,7 @@ export function AddressDialog({
                 onChange={(e) => setF({ ...f, recipient: e.target.value })}
                 {...field('recipient')}
               />
-              <Err k="recipient" />
+              <FieldError errors={errors} k="recipient" />
             </div>
             <div className="grid gap-1.5">
               <Label htmlFor="addr-phone">電話</Label>
@@ -182,7 +183,7 @@ export function AddressDialog({
                 onChange={(e) => setF({ ...f, phone: e.target.value })}
                 {...field('phone')}
               />
-              <Err k="phone" />
+              <FieldError errors={errors} k="phone" />
             </div>
           </div>
           <div className="grid gap-1.5">
@@ -199,7 +200,7 @@ export function AddressDialog({
                 ))}
               </SelectContent>
             </Select>
-            <Err k="region" />
+            <FieldError errors={errors} k="region" />
           </div>
           <div className="grid gap-1.5">
             <Label htmlFor="addr-line1">詳細地址</Label>
@@ -212,7 +213,7 @@ export function AddressDialog({
               onChange={(e) => setF({ ...f, line1: e.target.value })}
               {...field('line1')}
             />
-            <Err k="line1" />
+            <FieldError errors={errors} k="line1" />
           </div>
           {!forceDefault && !editing && (
             <label className="flex items-center gap-2 text-sm">

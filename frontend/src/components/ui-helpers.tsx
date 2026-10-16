@@ -39,16 +39,45 @@ export function Empty({ children }: { children: ReactNode }) {
   );
 }
 
+const sameDeps = (a: readonly unknown[], b: readonly unknown[]) => a.length === b.length && a.every((x, i) => Object.is(x, b[i]));
+
+/**
+ * True on the render where `deps` changed since the previous render. Lets a component reset state
+ * while rendering ("adjusting state when a prop changes", react.dev) instead of in an effect.
+ */
+export function useDepsChanged(deps: readonly unknown[]): boolean {
+  const [prev, setPrev] = useState(deps);
+  if (sameDeps(prev, deps)) return false;
+  setPrev(deps);
+  return true;
+}
+
+/**
+ * Current time for render code, which must not call Date.now() itself (react-hooks/purity).
+ * Re-renders every `intervalMs` (default 30 s) so time-based checks such as coupon expiry stay fresh.
+ */
+export function useNow(intervalMs = 30_000): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), intervalMs);
+    return () => clearInterval(id);
+  }, [intervalMs]);
+  return now;
+}
+
 /** Small async loader: returns [data, error, loading, reload]. */
 export function useAsync<T>(fn: () => Promise<T>, deps: unknown[]): [T | null, unknown, boolean, () => void] {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
   const [tick, setTick] = useState(0);
-  useEffect(() => {
-    let live = true;
+  // Reset for a new request while rendering, not synchronously in the effect (react-hooks/set-state-in-effect).
+  if (useDepsChanged(deps)) {
     setLoading(true);
     setError(null);
+  }
+  useEffect(() => {
+    let live = true;
     fn()
       .then((d) => live && setData(d))
       .catch((e) => live && setError(e))
@@ -58,7 +87,11 @@ export function useAsync<T>(fn: () => Promise<T>, deps: unknown[]): [T | null, u
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [...deps, tick]);
-  const reload = useCallback(() => setTick((t) => t + 1), []);
+  const reload = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    setTick((t) => t + 1);
+  }, []);
   return [data, error, loading, reload];
 }
 
