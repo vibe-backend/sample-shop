@@ -16,3 +16,8 @@ updates:
       npm:
         patterns: ["*"]
         update-types: ["minor", "patch"]
+    ignore:
+      # Hold @vitejs/plugin-react majors until vite/vitest are upgraded together (#83).
+      # Remove this ignore once #83 is done. Minor and patch updates still flow.
+      - dependency-name: "@vitejs/plugin-react"
+        update-types: ["version-update:semver-major"]
