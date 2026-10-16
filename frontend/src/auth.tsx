@@ -49,12 +49,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Initial session load. State is only set from promise callbacks (react-hooks/set-state-in-effect).
   useEffect(() => {
-    refreshCart();
-    if (!tokenStore.get()) return;
+    if (!tokenStore.get()) {
+      refreshCart(); // guest cart; setState happens in its promise callbacks
+      return;
+    }
     let live = true;
     api
       .me()
-      .then((m) => live && setMe(m))
+      .then((m) => {
+        if (!live) return;
+        setMe(m);
+        refreshCart(); // only once the token is known to be valid, as before
+      })
       .catch(() => {
         if (!live) return;
         tokenStore.clear();

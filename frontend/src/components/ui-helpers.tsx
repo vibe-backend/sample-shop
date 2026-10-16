@@ -52,9 +52,16 @@ export function useDepsChanged(deps: readonly unknown[]): boolean {
   return true;
 }
 
-/** Time captured once when the component mounts; render code must not call Date.now() (react-hooks/purity). */
-export function useNow(): number {
-  const [now] = useState(() => Date.now());
+/**
+ * Current time for render code, which must not call Date.now() itself (react-hooks/purity).
+ * Re-renders every `intervalMs` (default 30 s) so time-based checks such as coupon expiry stay fresh.
+ */
+export function useNow(intervalMs = 30_000): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), intervalMs);
+    return () => clearInterval(id);
+  }, [intervalMs]);
   return now;
 }
 
