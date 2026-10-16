@@ -16,7 +16,7 @@
     "skipLibCheck": true,
     "isolatedModules": true,
     "types": [
-      "vite/client"
+      "@rsbuild/core/types"
     ],
     "baseUrl": ".",
     "paths": {

@@ -1,12 +1,12 @@
 {
   // Tests run only on Node 22 (vitest), so they may use ES2022 APIs such as Array.prototype.at.
-  // App code stays on ES2020 (tsconfig.json) because Vite 5's default build target
-  // (chrome87/edge88/firefox78/safari14) does not polyfill them.
+  // App code stays on ES2020 (tsconfig.json) because the production bundler does not
+  // polyfill newer JavaScript APIs.
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "lib": ["ES2020", "ES2022", "DOM", "DOM.Iterable"],
-    "types": ["vite/client", "node"]
+    "types": ["@rsbuild/core/types", "node"]
   },
-  "include": ["src", "vite.config.ts", "build-env.ts", "build-env.test.ts"],
+  "include": ["src", "rsbuild.config.ts", "vitest.config.ts", "build-env.ts", "build-env.test.ts"],
   "exclude": []
 }

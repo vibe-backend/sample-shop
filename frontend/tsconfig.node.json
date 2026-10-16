@@ -5,6 +5,6 @@
     "lib": ["ES2022"],
     "types": ["node"]
   },
-  "include": ["vite.config.ts", "build-env.ts"],
+  "include": ["rsbuild.config.ts", "vitest.config.ts", "build-env.ts"],
   "exclude": []
 }

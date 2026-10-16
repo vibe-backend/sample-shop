@@ -781,7 +781,7 @@ export function createMockApi(opts: MockOptions = {}): ShopApi & { state: MockSt
         releaseReservation(o);
         o.payment_method = pay.method;
         transition(o, 'paid', 'system');
-        // Index access, not .at(): Vite 5's default build target (chrome87/firefox78/safari14) predates Array.prototype.at.
+        // Use index access to keep compatibility with browsers without Array.prototype.at.
         const h = o.status_history!;
         o.paid_at = h[h.length - 1].at;
         state.idempotency[ik] = o.id;

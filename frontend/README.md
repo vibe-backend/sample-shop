@@ -1,6 +1,6 @@
 # Sample Shop frontend
 
-A mock-data storefront for the vibe-backend sample shop, built with Vite, React 18, TypeScript, Tailwind CSS v4 and [shadcn/ui](https://ui.shadcn.com/). Generated shadcn components live in `src/components/ui/` (add more with `npx shadcn@4.21.4 add <name>`, matching the vendored CSS version; the CLI is not a package dependency). The shared `shadcn/tailwind.css` utilities are vendored at `src/styles/shadcn-tailwind.css` so the CLI package (and its audit advisories) stay out of the lockfile (its MIT notice is in `public/THIRD_PARTY_NOTICES.txt`, which ships in `dist/`); the theme is CSS variables in `src/index.css`, and dark mode uses the `dark` class on `<html>`. The UI is in Traditional Chinese (zh-Hant). It runs entirely on mock data until the backend exists.
+A mock-data storefront for the vibe-backend sample shop, built with Rsbuild, React 19, TypeScript, Tailwind CSS v4 and [shadcn/ui](https://ui.shadcn.com/). Generated shadcn components live in `src/components/ui/` (add more with `pnpm dlx shadcn@4.21.4 add <name>`, matching the vendored CSS version; the CLI is not a package dependency). The shared `shadcn/tailwind.css` utilities are vendored at `src/styles/shadcn-tailwind.css` so the CLI package (and its audit advisories) stay out of the lockfile (its MIT notice is in `public/THIRD_PARTY_NOTICES.txt`, which ships in `dist/`); the theme is CSS variables in `src/index.css`, and dark mode uses the `dark` class on `<html>`. The UI is in Traditional Chinese (zh-Hant). It runs entirely on mock data until the backend exists.
 
 Live demo (mock mode, after merge): <https://vibe-backend.github.io/sample-shop/>
 
@@ -8,25 +8,27 @@ Live demo (mock mode, after merge): <https://vibe-backend.github.io/sample-shop/
 
 ```sh
 cd frontend
-npm ci
-npm run dev        # http://localhost:5173, mock mode by default
+pnpm install --frozen-lockfile
+pnpm run dev        # http://localhost:3000, mock mode by default
 ```
 
 Other scripts:
 
 | Script | What it does |
 | --- | --- |
-| `npm run lint` | ESLint plus a TypeScript typecheck |
-| `npm run typecheck` | TypeScript only |
-| `npm test` | Vitest unit tests (mock adapter and cart math) |
-| `npm run build` | Production build into `dist/` (base path `/sample-shop/`); requires `VITE_API_MODE` |
-| `npm run preview` | Serve the production build |
+| `pnpm run lint` | ESLint plus a TypeScript typecheck |
+| `pnpm run typecheck` | TypeScript only |
+| `pnpm test` | Vitest unit tests (mock adapter and cart math) |
+| `pnpm run build` | Production build into `dist/` (base path `/sample-shop/`); requires `VITE_API_MODE` |
+| `pnpm run preview` | Serve the production build |
 
 ## Frontend feature draft
 
 The shopping draft adds buyer discovery, cart selection, guest carts, buy-now checkout, promotions, account management, reviews, returns and staff SKU management in mock mode. See [issue coverage and production dependencies](docs/FRONTEND-DRAFT.md). These features are a frontend prototype; new real-mode methods explicitly report unavailable until their backend contracts exist.
 
 ## Mock vs real API
+
+Environment variable names stay `VITE_*` for compatibility with existing CI, deployments and env files.
 
 The whole app talks to one typed `ShopApi` interface (`src/api/types.ts`), which mirrors the API contract. `src/api/index.ts` picks the adapter at build time:
 
@@ -35,13 +37,13 @@ The whole app talks to one typed `ShopApi` interface (`src/api/types.ts`), which
 | `VITE_API_MODE` | `mock` in dev; **required** for builds | `mock` uses the in-browser adapter; `real` uses fetch |
 | `VITE_API_BASE_URL` | `http://localhost:8080` | Backend origin, used only when `real` |
 | `VITE_SHOP_SLUG` | `main` | The `{slug}` shop constant in catalog paths |
-| `VITE_BASE` | `/sample-shop/` | Base path for `npm run build` (dev always uses `/`) |
+| `VITE_BASE` | `/sample-shop/` | Base path for `pnpm run build` (dev always uses `/`) |
 
-`npm run build` fails unless `VITE_API_MODE` is set to `mock` or `real`, so a production deploy can't silently ship mock mode with its demo accounts:
+`pnpm run build` fails unless `VITE_API_MODE` is set to `mock` or `real`, so a production deploy can't silently ship mock mode with its demo accounts:
 
 ```sh
-VITE_API_MODE=real VITE_API_BASE_URL=https://your-backend.example npm run build
-VITE_API_MODE=mock npm run build   # demo build, as used by the GitHub Pages workflow
+VITE_API_MODE=real VITE_API_BASE_URL=https://your-backend.example pnpm run build
+VITE_API_MODE=mock pnpm run build   # demo build, as used by the GitHub Pages workflow
 ```
 
 To switch the dev server to the real backend, copy `.env.example` to `.env.local` and set:
