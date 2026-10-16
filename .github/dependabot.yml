@@ -13,6 +13,40 @@ updates:
     schedule:
       interval: weekly
     groups:
+      # Must stay before the catch-all `npm` group: Dependabot uses the first matching group.
+      react:
+        patterns: ["react", "react-dom", "@types/react", "@types/react-dom"]
+        update-types: ["minor", "patch"]
+      # Also before the catch-all: ESLint core, configs and plugins move together.
+      eslint:
+        patterns: ["eslint", "@eslint/*", "eslint-plugin-*", "typescript-eslint"]
+        update-types: ["minor", "patch"]
       npm:
         patterns: ["*"]
         update-types: ["minor", "patch"]
+    ignore:
+      # Hold majors until vite/vitest/plugin-react are upgraded together (#83); remove after #83.
+      - dependency-name: "@vitejs/plugin-react"
+        update-types: ["version-update:semver-major"]
+      # Hold React 19 until react/react-dom and their types are upgraded together (#85); remove after #85.
+      - dependency-name: "react"
+        update-types: ["version-update:semver-major"]
+      # #85: remove after the React 19 upgrade.
+      - dependency-name: "react-dom"
+        update-types: ["version-update:semver-major"]
+      # #85: remove after the React 19 upgrade.
+      - dependency-name: "@types/react"
+        update-types: ["version-update:semver-major"]
+      # #85: remove after the React 19 upgrade.
+      - dependency-name: "@types/react-dom"
+        update-types: ["version-update:semver-major"]
+      # Hold ESLint 10 until eslint and @eslint/js are upgraded together (#86); remove after #86.
+      - dependency-name: "eslint"
+        update-types: ["version-update:semver-major"]
+      # #86: remove after the ESLint 10 upgrade.
+      - dependency-name: "@eslint/js"
+        update-types: ["version-update:semver-major"]
+      # @types/node's major must track the actual Node runtime (CI node-version / .nvmrc, and any
+      # engines field), not the latest release. Bump it by hand with the runtime (#87).
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
