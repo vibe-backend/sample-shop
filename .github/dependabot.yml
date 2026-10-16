@@ -31,12 +31,6 @@ updates:
         patterns: ["*"]
         update-types: ["minor", "patch"]
     ignore:
-      # Hold ESLint 10 until eslint and @eslint/js are upgraded together (#86); remove after #86.
-      - dependency-name: "eslint"
-        update-types: ["version-update:semver-major"]
-      # #86: remove after the ESLint 10 upgrade.
-      - dependency-name: "@eslint/js"
-        update-types: ["version-update:semver-major"]
       # @types/node's major must track the actual Node runtime (CI node-version / .nvmrc, and any
       # engines field), not the latest release. Bump it by hand with the runtime (#87).
       - dependency-name: "@types/node"
