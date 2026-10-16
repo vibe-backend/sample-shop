@@ -2,7 +2,7 @@
 import { StrictMode, type ReactNode } from 'react';
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ApiRequestError, api, tokenStore, type Me } from './api';
+import { ApiRequestError, api, tokenStore, type Cart, type Me } from './api';
 import { AuthProvider, useAuth } from './auth';
 
 const meOk: Me = {
@@ -12,7 +12,7 @@ const meOk: Me = {
   roles: [],
 };
 
-const emptyCart = { items: [] as never[], currency: 'HKD', total_cents: 0 };
+const emptyCart: Cart = { items: [], subtotal_cents: 0 };
 
 function wrapper({ children }: { children: ReactNode }) {
   return <AuthProvider>{children}</AuthProvider>;
@@ -131,8 +131,23 @@ describe('AuthProvider session restore (#108)', () => {
 
   it('without a token, is ready immediately and loads the guest cart', async () => {
     const getCart = vi.spyOn(api, 'getCart').mockResolvedValue({
-      ...emptyCart,
-      items: [{ id: 'ci1', product: { id: 'p1' } as never, quantity: 2, unit_price_cents: 100 }],
+      items: [
+        {
+          id: 'ci1',
+          product: {
+            id: 'p1',
+            slug: 'p1',
+            name: 'P1',
+            price_cents: 100,
+            currency: 'HKD',
+            image_url: null,
+            in_stock: true,
+          },
+          quantity: 2,
+          line_total_cents: 200,
+        },
+      ],
+      subtotal_cents: 200,
     });
     const me = vi.spyOn(api, 'me');
 
