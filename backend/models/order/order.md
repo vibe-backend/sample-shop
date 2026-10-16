@@ -18,7 +18,7 @@
 
 - (user_id, idempotency_key) 資料庫唯一；request_hash 必須和訂單一同寫入，不可只在查詢時比較。
 - reservation_expires_at：時間戳記，選填；新訂單為資料庫 now() + 30 分鐘，舊訂單遷移須補期限。
-- reservation_active：布林，必填，預設 false；新 pending 訂單为 true，付款、取消或逾期在同一交易中改為 false。
+- reservation_active：布林，必填，預設 false；新 pending 訂單為 true，付款、取消或逾期在同一交易中改為 false。
 - cancellation_reason：字串，選填，最多 200 字；逾期填付款逾時。
 - 庫存語意與鎖順序見 CONTRACT §15；只有持有此訂單列鎖並成功轉換狀態者可以釋放／提交保留。
 

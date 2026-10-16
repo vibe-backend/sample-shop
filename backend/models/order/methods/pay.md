@@ -23,7 +23,7 @@
 5. 若 reservation_expires_at <= clock_timestamp()，回 ORDER_NOT_PAYABLE；不寫入付款，不保留 key。獨立 worker 在下一輪（最遲約一分鐘）取消並釋放保留，付款錯誤回滾不影響 worker 交易。
 6. simulate 為 failure 時回 `PAYMENT_DECLINED`；不寫入任何資料，訂單維持 pending，key 不保留。
 7. 執行 `UPDATE orders SET status = 'paid', payment_method = method, paid_at = now(), reservation_active = false WHERE id = 訂單 id AND user_id = ctx.user.id AND status = 'pending' AND reservation_active = true AND reservation_expires_at > clock_timestamp()`，並檢查影響列數；為 0（並發的另一筆付款已成功）回 `ORDER_NOT_PAYABLE`。
-8. 先依 product_id 固定順序鎖定 product 列，再依該商品 sku_id 鎖定庫存列並 UPDATE reserved_stock = reserved_stock - quantity，WHERE reserved_stock >= quantity；stock 不變，故實體庫存 stock + reserved_stock 在付款時才减少。檢查影響列數，任何缺少保留視為資料一致性錯誤且整筆回滾。SKU 庫存更新皆 version + 1。
+8. 先依 product_id 固定順序鎖定 product 列，再依該商品 sku_id 鎖定庫存列並 UPDATE reserved_stock = reserved_stock - quantity，WHERE reserved_stock >= quantity；stock 不變，故實體庫存 stock + reserved_stock 在付款時才減少。檢查影響列數，任何缺少保留視為資料一致性錯誤且整筆回滾。SKU 庫存更新皆 version + 1。
 9. 新增 payment_attempts 一列：order_id、idempotency_key、request_hash、method，user_id 用 ctx.user.id。
 10. 新增 order_status_events 一列：status 為 paid、at 為 now()、actor 為 buyer。
 11. 回傳整張訂單（id、status、payment_method、paid_at、reservation_expires_at、reservation_active、cancellation_reason、status_history、shipping_address、items、total_cents、currency、created_at）。

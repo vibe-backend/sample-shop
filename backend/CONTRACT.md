@@ -282,7 +282,7 @@ type StaffOrderStatusInput = { status: 'shipped' | 'cancelled' };
 - 檢查順序：訂單存在 → 重送判斷 → 欄位驗證 → `status` 必須為 `pending` → 模擬結果。
 - 並發：狀態更新使用 `UPDATE orders SET status='paid', payment_method=…, paid_at=now() WHERE id=… AND user_id=… AND status='pending' AND reservation_active AND reservation_expires_at > clock_timestamp()` 並檢查影響列數；為 0 回 409 `ORDER_NOT_PAYABLE`，因此兩筆並發付款只有一筆成功。更新訂單與新增 `payment_attempts` 在同一交易中完成。
 - 庫存：下單只保留可售數量，付款提交保留（詳見 §15）。付款與 worker 共用 order 列鎖；付款在取得鎖後用 clock_timestamp() 檢查期限，不能用交易起始 now() 放行排隊過期的付款。
-- 逾期付款回 409 ORDER_NOT_PAYABLE；該 key 不保留。取消由獨立 worker 在下一轮（約一分鐘內）執行；付款錯誤回滾不影響 worker 的交易。
+- 逾期付款回 409 ORDER_NOT_PAYABLE；該 key 不保留。取消由獨立 worker 在下一輪（約一分鐘內）執行；付款錯誤回滾不影響 worker 的交易。
 - 與 PR #65 `types.ts`／mock 的差異：
   - PR #70 mock 已驗證 method 與 simulate；兩者不合法皆回 422。
   - PR #70 mock 已比較 body 與訂單 id；與後端的 IDEMPOTENCY_KEY_REUSED 規則一致。
@@ -342,8 +342,8 @@ type StaffOrderStatusInput = { status: 'shipped' | 'cancelled' };
 - pending 手動取消或逾期：stock += quantity、reserved_stock -= quantity；
   paid 取消：stock += quantity，不再減 reserved_stock。SKU 庫存變更皆 version + 1。
 - Scheduler 每分鐘執行 tenant-scoped expiry job，詳見 [jobs/README.md](jobs/README.md)。
-  PostgreSQL 函數使用 FOR UPDATE SKIP LOCKED、條件 UPDATE、單一交易及固定 inventory 鎖顺序。
-  只成功的状态轉換會釋放庫存及新增 system 歷程。重跑不會重複釋放。
+  PostgreSQL 函數使用 FOR UPDATE SKIP LOCKED、條件 UPDATE、單一交易及固定 inventory 鎖順序。
+  只成功的狀態轉換會釋放庫存及新增 system 歷程。重跑不會重複釋放。
 - Idempotency：place 與 pay 先鎖目前 user 列，重查 key；orders 的 (user_id, idempotency_key)
   唯一，request_hash 與訂單一同寫入。付款沿用 payment-attempt 的唯一規則。
 - 逾期付款仍回 ORDER_NOT_PAYABLE（409），不是新錯誤碼。
@@ -358,7 +358,7 @@ type StaffOrderStatusInput = { status: 'shipped' | 'cancelled' };
 
 - 端點 §2 #27–#29；VariantInput 為 options、price_cents、stock、active、可選 image_url。
   更新帶 If-Match: "version"，缺少 428、不符 412 PRECONDITION_FAILED。
-- options 鍵集合必須恰等於商品選項集合、值必須在对应 values 中；不符 422。
+- options 鍵集合必須恰等於商品選項集合、值必須在對應 values 中；不符 422。
   SQL 以 (product_id, options::jsonb) 唯一，重複組合（含 inactive）回 409 SKU_EXISTS。
 - 停用／重新啟用透過 PUT active；不硬刪除、不影響既有訂單快照。
 - 商品 options 更新如果使任何 active SKU 不再有效，409 OPTIONS_IN_USE。

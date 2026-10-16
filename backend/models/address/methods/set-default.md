@@ -12,7 +12,7 @@
 
 ## 做法（依此固定順序）
 
-先以 `SELECT id FROM users WHERE id = ctx.user.id FOR UPDATE` 取得共用的每人地址簿鎖；接著才執行以下讀写。所有地址寫入必須用同一鎖，並於 runtime 交易結束時釋放。
+先以 `SELECT id FROM users WHERE id = ctx.user.id FOR UPDATE` 取得共用的每人地址簿鎖；接著才執行以下讀寫。所有地址寫入必須用同一鎖，並於 runtime 交易結束時釋放。
 
 1. 以主鍵查詢 addresses（user_id = ctx.user.id、deleted_at 為 null）；不存在、屬於他人或已軟刪除回 `ADDRESS_NOT_FOUND`。
 2. 執行 `UPDATE addresses SET is_default = false WHERE user_id = ctx.user.id AND is_default = true AND id <> 地址 id`。
