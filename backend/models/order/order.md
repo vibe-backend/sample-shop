@@ -14,6 +14,10 @@
 - paid_at：時間戳記，選填，預設 null；付款成功時由 order.pay 寫入。
 - request_hash：字串，必填，最長 64 字（建立訂單時請求 body（含 address_id）的雜湊，用於判斷同 key 不同 body）。
 
+## 規則
+
+- (user_id, idempotency_key) 唯一，供同一使用者的並發重送使用。order.place 先鎖 user 列再重查 key，然後與 request_hash 同一筆 INSERT 寫入；不可只在查詢時比較 request_hash。
+
 ## 輸出
 
 - get 一併回傳 items（order_items 快照，欄位同 order-item）與 status_history（order_status_events 的 status、at，由舊到新，ISO 8601 UTC）。
