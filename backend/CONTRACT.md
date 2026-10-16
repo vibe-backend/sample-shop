@@ -106,7 +106,7 @@ type OrderItem = {
 };
 type Address = {
   id: string; recipient: string;
-  phone: string;              // 8 位香港號碼，已正規化（無 +852／空白）
+  phone: string;              // 8 位香港號碼；空白與連字號已移除，國碼僅在其後恰為 8 位時才去掉
   region: string;             // 香港島 | 九龍 | 新界 | 離島
   line1: string;              // 詳細地址
   is_default: boolean; created_at: string;
@@ -117,7 +117,8 @@ type CreateOrderInput = { address_id: string };
 type PaymentMethod = 'mock_card' | 'mock_alipay';
 type PaymentInput = { method: PaymentMethod; simulate: 'success' | 'failure' };
 type OrderStatusEvent = { status: OrderStatus; at: string }; // §14，ISO 8601 UTC
-type Order = { reservation_expires_at?: string | null; reservation_active: boolean; cancellation_reason?: string | null; id: string; status: OrderStatus; payment_method?: PaymentMethod | null; paid_at?: string | null; status_history?: OrderStatusEvent[]; shipping_address?: AddressSnapshot | null; items: OrderItem[]; total_cents: number; currency: string; created_at: string };
+type Order = { reservation_expires_at?: string | null; reservation_active: boolean; cancellation_reason?: string | null; id: string; status: OrderStatus; payment_method: PaymentMethod | null; paid_at: string | null; status_history?: OrderStatusEvent[]; shipping_address?: AddressSnapshot | null; items: OrderItem[]; total_cents: number; currency: string; created_at: string };
+// §13：payment_method、paid_at 一律回傳；未付款為 null
 // §14：後端一律回傳 status_history（由舊到新，至少一筆 pending）
 type StaffOrder = Order & { buyer: { id: string; display_name: string; email: string } };
 type StaffOrderStatusInput = { status: 'shipped' | 'cancelled' };
@@ -191,7 +192,7 @@ type StaffOrderStatusInput = { status: 'shipped' | 'cancelled' };
 | 購物車品項嵌入商品摘要（join／expand） | 以 method SQL 關聯 products 表撰寫；spec 10.8 禁止 query 其他物件的表，驗證可能不通過 **〔缺口〕** | #21 |
 | 同商品累加數量 | 以 `cart-item.add` method 先查再更新／新增 | — |
 | 下單需同一交易寫入 product／product-variant、order、order-item、cart-item | 依已核准的跨 model 寫入規則（§4b）撰寫；SDK runtime 尚未實作這些交易語意 | — |
-| Idempotency-Key | 以 `orders.idempotency_key` 欄位 + method 先查重模擬；平台層未支援 **〔缺口〕** | #85 |
+| Idempotency-Key | source 先鎖 user 列、以 `(user_id, idempotency_key)` 唯一索引與同筆 INSERT 的 `request_hash` 定義並發重送；SDK 平台層未支援 **〔缺口〕** | #85 |
 | PATCH | 不支援；前端已改用 PUT | #86 |
 | Cursor 分頁、價格區間篩選 | 內建 CRUD 只有 offset 分頁；以自訂 method 撰寫 **〔缺口〕** | #87 |
 | CORS | 不支援 **〔缺口〕** | #84 |
@@ -235,7 +236,7 @@ type StaffOrderStatusInput = { status: 'shipped' | 'cancelled' };
 - 同一 key、不同 body：回 409 `IDEMPOTENCY_KEY_REUSED`。比較依據為 body（`{ address_id }`）的正規化 JSON 雜湊；同一 key 但 `address_id` 不同即回 409。
 - 第一次請求失敗（4xx、`TX_TIMEOUT`、`TX_CONFLICT`）時不保留 key，可用同一 key 重試。
 - 收到 503 `TX_CONFLICT`（`retryable: true`、`Retry-After: 1`）或網路錯誤時，前端等待後**以同一個 key** 重試；使用者重新按下「下單」才產生新 key。
-- 實作：SDK 平台層尚未支援（sdk #85）；v2 source 先鎖 user 列、重查 key，再以資料庫唯一索引及同交易 request_hash 保護並發。SQL 索引已測試，SDK 編譯後仍須驗證 HTTP 重送流程。
+- 實作：SDK 平台層尚未支援（sdk #85）**〔缺口〕**。source 要求下單與付款皆先鎖本租戶 user 列（FOR UPDATE）再重查 key。`orders` 以 `(user_id, idempotency_key)` 唯一，`request_hash` 與訂單同一筆 INSERT 寫入；付款沿用 `payment_attempts` 的 `(user_id, idempotency_key)` 唯一，並同樣寫入 `request_hash`。並發的相同 key 在再次查詢後回傳原結果，不重複建立。SQL 索引已於本機 migration 測試；HTTP 重送仍待 SDK 編譯後驗證。
 
 ## 11. 下單時 PRODUCT_UNAVAILABLE 的錯誤細節
 
@@ -251,11 +252,11 @@ type StaffOrderStatusInput = { status: 'shipped' | 'cancelled' };
 
 ## 12. 收貨地址（前端 #29，sample-shop PR #64）
 
-- 所有地址寫入先鎖定本租戶 user 列（FOR UPDATE），再計數／讀取／更新地址，序列化首個地址、20 個上限與預設遞補。資料庫部分唯一索引保護每人唯一預設，trigger 在新增或恢復地址時以相同 user 鎖強制 20 個上限。刪除先 SELECT 保存舊 is_default，再 UPDATE；不能用更新後的 RETURNING is_default 判斷舊預設。
+- 所有地址寫入（address.create、address.update、address.remove、address.set-default）先鎖定本租戶 user 列（`SELECT id FROM users WHERE id = ctx.user.id FOR UPDATE`），再計數／讀取／更新地址，序列化首個地址、20 個上限與預設遞補。鎖定空地址集合並不能保護第一次新增。資料庫部分唯一索引 `addresses_one_default`（`addresses(user_id) WHERE deleted_at IS NULL AND is_default`）保護每人唯一預設。BEFORE INSERT OR UPDATE trigger `addresses_limit`（函式 `shop_check_address_limit`）在新增或恢復地址時以相同 user 鎖強制 20 個上限。刪除先 SELECT 保存舊 is_default，再 UPDATE；不能用更新後的 RETURNING is_default 判斷舊預設。
 - model `address`：每位使用者各自擁有（owner-key `user_id`），欄位 `id`、`recipient`、`phone`、`region`、`line1`、`is_default`、`created_at`；每人最多 20 個。
-- 驗證（與 PR #64 `lib/address.ts` 相同）：`recipient` 1–50 字；`phone` 移除空白與連字號，只有國碼後恰為 8 位有效號碼（`^(?:\+852|852)([2-9][0-9]{7})$`）才移除 `+852`／`852`，最後須為 `[2-9]` 開頭的 8 位數字（例如 `85212345` 保留原值），並以正規化後的值儲存；`region` 為 香港島／九龍／新界／離島；`line1` 5–200 字。不通過回 422 `VALIDATION_FAILED`。
+- 驗證（與目前前端 `lib/address.ts` 相同）：`recipient` 1–50 字；`phone` 移除空白與連字號，只有國碼後恰為 8 位有效號碼（`^(?:\+852|852)([2-9][0-9]{7})$`）才移除 `+852`／`852`，最後須為 `[2-9]` 開頭的 8 位數字（例如 `85212345` 保留原值），並以正規化後的值儲存；`region` 為 香港島／九龍／新界／離島；`line1` 5–200 字。不通過回 422 `VALIDATION_FAILED`。
 - `GET /shop/v1/addresses`：回傳 `Address[]`（非 `Page`），預設地址排最前，其餘依 `created_at` 由新到舊。
-- `POST /shop/v1/addresses`：201。使用者的第一個地址自動成為預設；`is_default: true` 時在同一交易中先清除舊的預設。達 20 個回 422 `ADDRESS_LIMIT`。
+- `POST /shop/v1/addresses`：201。使用者的第一個地址自動成為預設；`is_default: true` 時在同一交易中先清除舊的預設。達 20 個回 422 `ADDRESS_LIMIT`。並發新增在 user 鎖與 `addresses_limit` 之下計數，不會超過 20；並發的第一個地址不會產生兩個預設。
 - 下單：body `address_id` 必填（缺少 422 `ADDRESS_REQUIRED`；不存在或屬於他人 404 `ADDRESS_NOT_FOUND`）。`order.place` 在同一交易中把 `recipient`／`phone`／`region`／`line1` 快照寫入 `orders.shipping_address`，之後修改地址簿不影響訂單。`address_id` 計入冪等 body 雜湊（§10）。
 - `Product.sold_count`：`order.place` 保留庫存時同時累加（有規格時加在所屬商品）；不可由 `ProductInput` 提供。
 - 地址簿管理（#44，前端 PR #69）：已列為正式端點 §2 #24–#26。
@@ -280,13 +281,10 @@ type StaffOrderStatusInput = { status: 'shipped' | 'cancelled' };
 - 其他錯誤：400 `IDEMPOTENCY_KEY_REQUIRED`；404 `NOT_FOUND`（不存在或屬於他人）；409 `ORDER_NOT_PAYABLE`（已付款或已取消）；422 `VALIDATION_FAILED`；504 `TX_TIMEOUT`；503 `TX_CONFLICT`。
 - 冪等（套用 §10）：範圍為同一使用者＋付款路由。只有成功的付款會保留 key（model `payment-attempt`：`user_id`＋`idempotency_key` 唯一、`order_id` 唯一、`request_hash`、`method`）。同一 key 且同一訂單、同一 body 重送時回 200 與該訂單；同一 key 但訂單或 body 不同回 409 `IDEMPOTENCY_KEY_REUSED`。
 - 檢查順序：訂單存在 → 重送判斷 → 欄位驗證 → `status` 必須為 `pending` → 模擬結果。
-- 並發：狀態更新使用 `UPDATE orders SET status='paid', payment_method=…, paid_at=now() WHERE id=… AND user_id=… AND status='pending' AND reservation_active AND reservation_expires_at > clock_timestamp()` 並檢查影響列數；為 0 回 409 `ORDER_NOT_PAYABLE`，因此兩筆並發付款只有一筆成功。更新訂單與新增 `payment_attempts` 在同一交易中完成。
+- 並發：同一使用者的付款 key 先鎖 user 列再重查（§10）。不同 key 的狀態更新使用 `UPDATE orders SET status='paid', payment_method=…, paid_at=now() WHERE id=… AND user_id=… AND status='pending' AND reservation_active AND reservation_expires_at > clock_timestamp()` 並檢查影響列數；為 0 回 409 `ORDER_NOT_PAYABLE`，因此兩筆並發付款只有一筆成功。更新訂單與新增 `payment_attempts`（含 `request_hash`）在同一交易中完成。
 - 庫存：下單只保留可售數量，付款提交保留（詳見 §15）。付款與 worker 共用 order 列鎖；付款在取得鎖後用 clock_timestamp() 檢查期限，不能用交易起始 now() 放行排隊過期的付款。
 - 逾期付款回 409 ORDER_NOT_PAYABLE；該 key 不保留。取消由獨立 worker 在下一輪（約一分鐘內）執行；付款錯誤回滾不影響 worker 的交易。
-- 與 PR #65 `types.ts`／mock 的差異：
-  - PR #70 mock 已驗證 method 與 simulate；兩者不合法皆回 422。
-  - PR #70 mock 已比較 body 與訂單 id；與後端的 IDEMPOTENCY_KEY_REUSED 規則一致。
-  - `types.ts` 中 `payment_method`、`paid_at` 為選填；後端一律回傳（未付款時為 `null`）。
+- 與前端的對照：PR #65 已關閉。已合併的 PR #70 會驗證 `method` 與 `simulate`（不合法回 422 `VALIDATION_FAILED`），重送時比較 body 與訂單 id（不同回 409 `IDEMPOTENCY_KEY_REUSED`），並一律寫入 `payment_method` 與 `paid_at`（未付款為 `null`）。後端與上述行為一致。先前「mock 不驗證 simulate、重送不比較 body、付款欄位選填」的差異註記已過時，不再適用。
 
 ## 14. 訂單狀態流程（前端 #34，sample-shop PR #68）
 
@@ -344,8 +342,9 @@ type StaffOrderStatusInput = { status: 'shipped' | 'cancelled' };
 - Scheduler 每分鐘執行 tenant-scoped expiry job，詳見 [jobs/README.md](jobs/README.md)。
   PostgreSQL 函數使用 FOR UPDATE SKIP LOCKED、條件 UPDATE、單一交易及固定 inventory 鎖順序。
   只成功的狀態轉換會釋放庫存及新增 system 歷程。重跑不會重複釋放。
-- Idempotency：place 與 pay 先鎖目前 user 列，重查 key；orders 的 (user_id, idempotency_key)
-  唯一，request_hash 與訂單一同寫入。付款沿用 payment-attempt 的唯一規則。
+- Idempotency：place 與 pay 先鎖目前 user 列（FOR UPDATE），重查 key；orders 的 (user_id, idempotency_key)
+  唯一，request_hash 與訂單同一筆 INSERT 寫入。付款沿用 payment_attempts 的 (user_id, idempotency_key)
+  唯一，request_hash 與該筆紀錄同一筆 INSERT 寫入。
 - 逾期付款仍回 ORDER_NOT_PAYABLE（409），不是新錯誤碼。
   庫存保留不一致時整批回滾並告警，不得以 max(0) 隱藏壞帳。
 - 部署順序：SDK 基礎 migrations → main/001 → main/002 → main/003（同一交易）→ worker。

@@ -13,7 +13,7 @@
 
 - idempotency_key（必填，字串，1 至 64 字）；缺少回 `IDEMPOTENCY_KEY_REQUIRED`。
 - address_id（uuid）；缺少回 `ADDRESS_REQUIRED`。
-- request_hash（字串，請求 body 正規化後的雜湊；body 含 address_id，因此同一 key 但不同地址視為不同 body）。
+- request_hash（必填，字串，最長 64 字；請求 body 正規化後的雜湊。由 API 依含 address_id 的 body 計算，不是客戶端欄位。同一 key 但不同地址視為不同 body）。
 
 ## 做法（依此固定順序）
 
@@ -22,7 +22,7 @@
 3. 查詢購物車（cart_items，user_id = ctx.user.id、未刪除），關聯 products 與 product_variants；若為空回 `CART_EMPTY`。
 4. 任一商品或所選規格已 inactive 或刪除（或商品有 options 但規格全部停用），回 `PRODUCT_UNAVAILABLE`，並在錯誤細節附上所有受影響的 cart_item id（cart_item_ids）。
 5. 保留庫存：有 sku_id 的品項以 `UPDATE product_variants SET stock = stock - 數量, reserved_stock = reserved_stock + 數量, version = version + 1 WHERE id = sku_id AND stock >= 數量`，沒有規格的品項以同樣方式更新 products（不更新 SKU version；兩庫存欄一起更新，stock + reserved_stock 不變）；先依 product_id 由小到大鎖定所屬 product 列，再依該商品的 sku_id 由小到大執行（和規格編輯同順序），並檢查影響列數，任一筆為 0 即回 `OUT_OF_STOCK`（整個交易回滾）。同時將對應 products 的 sold_count 加上數量（有規格時加在所屬商品）。
-6. 新增 orders 一列：status 為 pending、payment_method 與 paid_at 為 null、shipping_address 為步驟 2 地址的快照（recipient、phone、region、line1）、total_cents 為各品項單價 × 數量的總和、currency、idempotency_key、request_hash、reservation_active = true、reservation_expires_at = now() + 30 分鐘。資料庫 (user_id, idempotency_key) 唯一；共用 user 鎖令並發相同 key 在再次查詢後回傳原訂單，不因唯一衝突而重複保留。
+6. 新增 orders 一列：status 為 pending、payment_method 與 paid_at 為 null、shipping_address 為步驟 2 地址的快照（recipient、phone、region、line1）、total_cents 為各品項單價 × 數量的總和、currency、idempotency_key、request_hash、reservation_active = true、reservation_expires_at = now() + 30 分鐘。request_hash 必須與訂單同一筆 INSERT 寫入，不可只在步驟 1 比較。資料庫 (user_id, idempotency_key) 唯一；共用 user 鎖令並發相同 key 在再次查詢後回傳原訂單，不因唯一衝突而重複保留。
 7. 逐項新增 order_items 快照：product_id、sku_id、sku_options、name、unit_price_cents（有規格時為規格價格）、quantity、line_total_cents。
 8. 新增 order_status_events 一列：status 為 pending、at 為 now()、actor 為 buyer。
 9. 軟刪除此使用者所有 cart_items（清空購物車）。

@@ -16,7 +16,7 @@
 
 ## 冪等與庫存保留
 
-- (user_id, idempotency_key) 資料庫唯一；request_hash 必須和訂單一同寫入，不可只在查詢時比較。
+- (user_id, idempotency_key) 唯一，供同一使用者的並發重送使用。order.place 先鎖 user 列再重查 key，然後與 request_hash 同一筆 INSERT 寫入；不可只在查詢時比較 request_hash。
 - reservation_expires_at：時間戳記，選填；新訂單為資料庫 now() + 30 分鐘，舊訂單遷移須補期限。
 - reservation_active：布林，必填，預設 false；新 pending 訂單為 true，付款、取消或逾期在同一交易中改為 false。
 - cancellation_reason：字串，選填，最多 200 字；逾期填付款逾時。

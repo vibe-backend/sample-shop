@@ -13,7 +13,7 @@
 
 ## 規則
 
-- user_id 與 idempotency_key 的組合唯一。
+- user_id 與 idempotency_key 的組合唯一。order.pay 先鎖 user 列再查重，並把 request_hash 與該筆紀錄同一筆 INSERT 寫入，供並發重送使用。
 - 每張訂單最多一筆紀錄（order_id 唯一）。
 
 ## 擁有權

@@ -18,9 +18,9 @@
 
 ## 規則
 
-- address.create、address.update、address.remove、address.set-default 皆先鎖定目前租戶的 user 列（`SELECT id FROM users WHERE id = ctx.user.id FOR UPDATE`），再讀寫地址。鎖定空地址集合並不能保護第一次新增，必須共用此 user 鎖。
-- 資料庫另以部分唯一索引保護每人唯一預設（`user_id WHERE deleted_at IS NULL AND is_default`）。
-- 每位使用者最多 20 個地址（只計 deleted_at 為 null 者）。
+- address.create、address.update、address.remove、address.set-default 皆先鎖定目前租戶的 user 列（`SELECT id FROM users WHERE id = ctx.user.id FOR UPDATE`），再讀寫地址。鎖定空地址集合並不能保護第一次新增，必須共用此 user 鎖。create、remove、set-default 都在這把鎖之下變更預設或筆數。
+- 資料庫另以部分唯一索引 `addresses_one_default` 保護每人唯一預設（`addresses(user_id) WHERE deleted_at IS NULL AND is_default`）。
+- 每位使用者最多 20 個地址（只計 deleted_at 為 null 者）。上限檢查必須在上述 user 鎖之後進行。BEFORE INSERT OR UPDATE trigger `addresses_limit`（函式 `shop_check_address_limit`）在新增或恢復地址時對同一 user 列 `FOR UPDATE`，再計數未刪除地址；已達 20 則拒絕（`ADDRESS_LIMIT`）。此 trigger 與 method 共用同一把 user 鎖。
 - 每位使用者最多一個 is_default 為 true 的地址；已刪除的地址 is_default 一律為 false。
 - 有未刪除地址時恰有一個預設；沒有未刪除地址時沒有預設。
 - 已軟刪除的地址對所有操作（列表、修改、刪除、設為預設、下單）都視為不存在，回 `ADDRESS_NOT_FOUND`。
