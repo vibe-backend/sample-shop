@@ -34,18 +34,6 @@ updates:
       # Hold majors until vite/vitest/plugin-react are upgraded together (#83); remove after #83.
       - dependency-name: "@vitejs/plugin-react"
         update-types: ["version-update:semver-major"]
-      # Hold React 19 until react/react-dom and their types are upgraded together (#85); remove after #85.
-      - dependency-name: "react"
-        update-types: ["version-update:semver-major"]
-      # #85: remove after the React 19 upgrade.
-      - dependency-name: "react-dom"
-        update-types: ["version-update:semver-major"]
-      # #85: remove after the React 19 upgrade.
-      - dependency-name: "@types/react"
-        update-types: ["version-update:semver-major"]
-      # #85: remove after the React 19 upgrade.
-      - dependency-name: "@types/react-dom"
-        update-types: ["version-update:semver-major"]
       # Hold ESLint 10 until eslint and @eslint/js are upgraded together (#86); remove after #86.
       - dependency-name: "eslint"
         update-types: ["version-update:semver-major"]
