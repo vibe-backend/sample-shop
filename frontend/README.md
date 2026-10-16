@@ -1,6 +1,6 @@
 # Sample Shop frontend
 
-A mock-data storefront for the vibe-backend sample shop, built with Vite, React 18, TypeScript, Tailwind CSS v4 and [shadcn/ui](https://ui.shadcn.com/). Generated shadcn components live in `src/components/ui/` (add more with `npx shadcn@latest add <name>`); the theme is CSS variables in `src/index.css`, and dark mode uses the `dark` class on `<html>`. The UI is in Traditional Chinese (zh-Hant). It runs entirely on mock data until the backend exists.
+A mock-data storefront for the vibe-backend sample shop, built with Vite, React 18, TypeScript, Tailwind CSS v4 and [shadcn/ui](https://ui.shadcn.com/). Generated shadcn components live in `src/components/ui/` (add more with `npx shadcn@4.21.4 add <name>`, matching the vendored CSS version; the CLI is not a package dependency). The shared `shadcn/tailwind.css` utilities are vendored at `src/styles/shadcn-tailwind.css` so the CLI package (and its audit advisories) stay out of the lockfile (its MIT notice is in `public/THIRD_PARTY_NOTICES.txt`, which ships in `dist/`); the theme is CSS variables in `src/index.css`, and dark mode uses the `dark` class on `<html>`. The UI is in Traditional Chinese (zh-Hant). It runs entirely on mock data until the backend exists.
 
 Live demo (mock mode, after merge): <https://vibe-backend.github.io/sample-shop/>
 
