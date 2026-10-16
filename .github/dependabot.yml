@@ -17,6 +17,10 @@ updates:
       react:
         patterns: ["react", "react-dom", "@types/react", "@types/react-dom"]
         update-types: ["minor", "patch"]
+      # Also before the catch-all: ESLint core, configs and plugins move together.
+      eslint:
+        patterns: ["eslint", "@eslint/*", "eslint-plugin-*", "typescript-eslint"]
+        update-types: ["minor", "patch"]
       npm:
         patterns: ["*"]
         update-types: ["minor", "patch"]
@@ -35,4 +39,10 @@ updates:
         update-types: ["version-update:semver-major"]
       # #85: remove after the React 19 upgrade.
       - dependency-name: "@types/react-dom"
+        update-types: ["version-update:semver-major"]
+      # Hold ESLint 10 until eslint and @eslint/js are upgraded together (#86); remove after #86.
+      - dependency-name: "eslint"
+        update-types: ["version-update:semver-major"]
+      # #86: remove after the ESLint 10 upgrade.
+      - dependency-name: "@eslint/js"
         update-types: ["version-update:semver-major"]
