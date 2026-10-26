@@ -37,3 +37,7 @@ updates:
       # TypeScript 7 waits for typescript-eslint support (#94); remove after #94.
       - dependency-name: "typescript"
         update-types: ["version-update:semver-major"]
+  - package-ecosystem: docker
+    directory: /backend
+    schedule:
+      interval: weekly

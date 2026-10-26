@@ -1,0 +1,11 @@
+# Host build output and optional local LLM recordings must not enter the image.
+fixtures/
+**/*.lock.md
+.vibe/
+manifest.json
+/out/
+.env
+.env.*
+*.key
+*.log
+image.tar

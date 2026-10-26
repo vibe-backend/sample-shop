@@ -1,0 +1,50 @@
+name: release
+on:
+  push:
+    tags: ["v*"]
+permissions: {}
+jobs:
+  check-config:
+    runs-on: ubuntu-24.04
+    permissions: {}
+    timeout-minutes: 5
+    # These must be repository variables: the caller's with: cannot read
+    # environment-scoped variables.
+    env:
+      VIBE_LLM_BASE_URL: ${{ vars.VIBE_LLM_BASE_URL }}
+      VIBE_LLM_MODEL: ${{ vars.VIBE_LLM_MODEL }}
+    steps:
+      - name: Check required repository variables
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=0
+          if [[ -z "$VIBE_LLM_BASE_URL" ]]; then
+            echo '::error::Missing repository variable VIBE_LLM_BASE_URL'
+            missing=1
+          fi
+          if [[ -z "$VIBE_LLM_MODEL" ]]; then
+            echo '::error::Missing repository variable VIBE_LLM_MODEL'
+            missing=1
+          fi
+          exit "$missing"
+  release:
+    needs: check-config
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    # Use an SDK release tag, never a branch or SHA; keep it equal to the
+    # vibe-runtime version deployers use. Dependabot may bump it.
+    # v1.0.0-rc.5 is the first SDK release with this reusable workflow.
+    # The SDK workflow refuses private LLM hosts.
+    uses: vibe-backend/sdk/.github/workflows/vibe-project-release.yml@v1.0.0-rc.8
+    with:
+      environment: release
+      project-path: backend
+      llm-provider: openai
+      llm-base-url: ${{ vars.VIBE_LLM_BASE_URL }}
+      llm-model: ${{ vars.VIBE_LLM_MODEL }}
+      llm-api-style: chat
+    secrets:
+      llm-api-key: ${{ secrets.VIBE_LLM_API_KEY }} # environment secret in release
