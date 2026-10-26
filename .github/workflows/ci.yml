@@ -100,3 +100,121 @@ jobs:
           cache-to: ${{ github.event_name != 'pull_request' && format('type=gha,mode=max,scope={0}', matrix.component) || '' }}
       - if: steps.detect.outputs.present != 'true'
         run: echo "No ${{ matrix.component }}/Dockerfile yet; skipping."
+
+  backend:
+    name: Backend build, smoke test, and image scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build with fake provider and summarize locks
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL https://raw.githubusercontent.com/vibe-backend/sdk/v1.0.0-rc.8/scripts/vibe-install.sh -o vibe-install.sh
+          sh vibe-install.sh install --version v1.0.0-rc.8
+          export PATH="$HOME/.local/bin:$PATH"
+          cd backend
+          LLM_PROVIDER=fake vibe build --check
+          LLM_PROVIDER=fake vibe build
+          while IFS= read -r -d '' lock; do
+            {
+              printf '### %s\n\n```markdown\n' "$lock"
+              cat "$lock"
+              printf '\n```\n\n'
+            } >> "$GITHUB_STEP_SUMMARY"
+          done < <(git ls-files -z -o --ignored --exclude-standard -- '*.lock.md')
+      - name: Build keyless test image
+        run: docker build -t sample-shop:ci backend
+      - name: Shop and counter API tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run -d --name shop -p 8080:8080 sample-shop:ci
+          cleanup() {
+            result=$?
+            if [ "$result" -ne 0 ]; then docker logs shop; fi
+            docker rm -f shop >/dev/null 2>&1 || true
+            docker network rm counter-alt >/dev/null 2>&1 || true
+            exit "$result"
+          }
+          trap cleanup EXIT
+          ready=false
+          for attempt in $(seq 1 60); do
+            status=$(curl -s -o /tmp/shop-body -w '%{http_code}' http://127.0.0.1:8080/api/web/v1/shop || true)
+            if [ "$status" = 200 ] && jq -e '. == {"shop":"sample-shop","status":"open","currency":"HKD"}' /tmp/shop-body >/dev/null; then
+              ready=true
+              break
+            fi
+            sleep 1
+          done
+          "$ready" || exit 1
+          expect() {
+            local method=$1 url=$2 filter=$3 status
+            status=$(curl -sS -o /tmp/api-body -w '%{http_code}' -X "$method" "$url")
+            printf '%s %s: %s %s\n' "$method" "$url" "$status" "$(cat /tmp/api-body)"
+            [ "$status" = 200 ]
+            jq -e "$filter" /tmp/api-body >/dev/null
+          }
+          B=http://127.0.0.1:8080
+          expect GET "$B/api/web/v1/shop" '. == {"shop":"sample-shop","status":"open","currency":"HKD"}'
+          expect GET "$B/api/web/v1/counter" '. == {"value":0}'
+          expect POST "$B/api/web/v1/increment-counter" '. == {"value":1}'
+          # The SDK runtime fixes public writes at 50 per client IP per day.
+          # The sequential POST used one; send the 50 concurrent POSTs from a second
+          # client address by attaching shop to a second Docker network and calling its address there.
+          docker network create counter-alt >/dev/null
+          docker network connect counter-alt shop
+          alt=$(docker inspect -f '{{(index .NetworkSettings.Networks "counter-alt").IPAddress}}' shop)
+          test -n "$alt"
+          seq 50 | xargs -P 50 -I{} curl -sS -o - -w '\n%{http_code}\n' -X POST "http://$alt:8080/api/web/v1/increment-counter" > /tmp/concurrent
+          awk '/^[0-9][0-9][0-9]$/ { n++; if ($0 != "200") bad++ } END { exit !(n == 50 && bad == 0) }' /tmp/concurrent
+          grep '^{' /tmp/concurrent | jq -s -e 'map(.value) | sort == [range(2;52)]' >/dev/null
+          printf '%s\n' 'concurrent: 50 x 200, values 2..51 unique'
+          expect GET "$B/api/web/v1/counter" '. == {"value":51}'
+      - name: Scan all image layers and configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker save sample-shop:ci -o image.tar
+          scan=$(mktemp -d)
+          trap 'rm -rf "$scan"' EXIT
+          mkdir "$scan/archive" "$scan/layers"
+          tar -xf image.tar -C "$scan/archive"
+          layers=0
+          for layer in "$scan"/archive/blobs/sha256/* "$scan"/archive/*/layer.tar; do
+            [ -f "$layer" ] || continue
+            if ! tar -tf "$layer" > "$scan/entries" 2>/dev/null; then continue; fi
+            layers=$((layers + 1))
+            for name in signing.key .env llm_api_key; do
+              count=$(awk -F/ -v name="$name" '$NF == name { n++ } END { print n+0 }' "$scan/entries")
+              printf '%s entries: %s\n' "$name" "$count"
+              [ "$count" -eq 0 ] || exit 1
+            done
+            # Keep each layer separate so later whiteouts/overwrites cannot hide secrets.
+            mkdir "$scan/layers/$layers"
+            tar -xf "$layer" -C "$scan/layers/$layers"
+          done
+          [ "$layers" -gt 0 ]
+          grep -raEl 'sk-[A-Za-z0-9_-]{20,}|LLM_API_KEY=' "$scan/layers" >> "$scan/matches" || { status=$?; [ "$status" -eq 1 ] || exit "$status"; }
+          # Debian base binaries such as /usr/bin/sqv embed the PEM header literal; real PEM keys are text files
+          grep -rIlE -- '-----BEGIN [A-Z ]*PRIVATE KEY-----' "$scan/layers" >> "$scan/matches" || { status=$?; [ "$status" -eq 1 ] || exit "$status"; }
+          find "$scan/layers" -type f \( -name "*.key" -o -name "*.pem" \) -print >> "$scan/matches"
+          if [ -s "$scan/matches" ]; then
+            cat "$scan/matches"
+            exit 1
+          else
+            printf 'Layers scanned: %s\n' "$layers"
+          fi
+          docker history --no-trunc --format '{{.CreatedBy}}' sample-shop:ci > "$scan/history"
+          if grep -qE 'LLM_API_KEY|llm_api_key=|sk-[A-Za-z0-9]' "$scan/history"; then
+            printf '%s\n' 'Forbidden value in image history'
+            exit 1
+          fi
+          docker image inspect --format '{{json .Config.Env}}' sample-shop:ci > "$scan/env.json"
+          jq -e 'all(.[]; startswith("LLM_") | not) and (index("VIBE_ALLOW_TEST_BUILD=1") != null)' "$scan/env.json" >/dev/null
+          test "$(docker image inspect --format '{{.Config.User}}' sample-shop:ci)" = 10001

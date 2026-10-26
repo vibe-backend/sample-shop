@@ -1,0 +1,19 @@
+.env
+.env.*
+# Locks are build output.
+*.lock.md
+# Optional local LLM recordings (VIBE_LLM_RECORD). Do not commit.
+fixtures/llm/
+# Signing keys, public keys, build record, cache.
+.vibe/
+signing.key
+*.key
+manifest.json
+/out/
+llm_api_key.txt
+llm_base_url.txt
+*.secret
+image.tar
+target/
+*.log
+.DS_Store
