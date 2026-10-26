@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 # Dev/demo image, not for production: manifest is development-signed.
 # Production signing: https://github.com/vibe-backend/sdk/issues/309
-FROM debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS download
+FROM debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad AS download
 ARG VIBE_VERSION=v1.0.0-rc.9
 ARG TARGETARCH
 RUN set -eu; \
@@ -18,7 +18,7 @@ RUN set -eu; \
 FROM scratch AS assets
 COPY --from=download /dist/ /
 
-FROM debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS verify
+FROM debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad AS verify
 ARG TARGETARCH
 # Pinned digest of the v1.0.0-rc.9 SHA256SUMS; update it together with VIBE_VERSION.
 ARG VIBE_SHA256SUMS_SHA256=21666579993f372880d1da5d8ef6bbdfca3f55a8b1cc8af8e6d0b89eea1c1afb
@@ -40,7 +40,7 @@ RUN set -eu; \
       tar -xzf "$name" -C /opt/vibe/bin; chmod 0755 "/opt/vibe/bin/$binary"; \
     done
 
-FROM debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS build
+FROM debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad AS build
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
 COPY --from=verify /opt/vibe/bin/vibe /usr/local/bin/vibe
 WORKDIR /src
@@ -60,7 +60,7 @@ RUN set -eu; \
     test -z "$(find /out -name signing.key -print)"; \
     test "$(find /out -type f | wc -l)" -eq 2
 
-FROM debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f
+FROM debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad
 LABEL org.opencontainers.image.source="https://github.com/vibe-backend/sample-shop" \
       org.opencontainers.image.description="Dev/demo test build, not for production; development-signed manifest (sdk#309)"
 RUN useradd --system --uid 10001 --no-create-home --shell /usr/sbin/nologin vibe
