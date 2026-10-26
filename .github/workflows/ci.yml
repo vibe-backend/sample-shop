@@ -101,26 +101,43 @@ jobs:
       - if: steps.detect.outputs.present != 'true'
         run: echo "No ${{ matrix.component }}/Dockerfile yet; skipping."
 
-  backend:
-    name: Backend build, smoke test, and image scan
+  backend-lint-test:
+    name: Backend lint and validate
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Build with fake provider and summarize locks
+      - name: Build with fake provider and validate
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          curl -fsSL https://raw.githubusercontent.com/vibe-backend/sdk/v1.0.0-rc.8/scripts/vibe-install.sh -o vibe-install.sh
-          sh vibe-install.sh install --version v1.0.0-rc.8
+          curl -fsSL https://raw.githubusercontent.com/vibe-backend/sdk/v1.0.0-rc.9/scripts/vibe-install.sh -o vibe-install.sh
+          sh vibe-install.sh install --version v1.0.0-rc.9
           export PATH="$HOME/.local/bin:$PATH"
           cd backend
+          scaffolding=$(find . \( -name '_project.md' -o -name '_definition.md' -o -name '_version.md' \))
+          if [ -n "$scaffolding" ]; then
+            printf '%s\n' "$scaffolding"
+            exit 1
+          fi
+          for banned in providers migrations fixtures; do
+            if [ -e "$banned" ]; then
+              printf 'unexpected %s\n' "$banned"
+              exit 1
+            fi
+          done
+          if git ls-files | grep -E '(^|/)([^/]*\.lock\.md|vibe\.lock|manifest\.json)$'; then
+            exit 1
+          fi
+          # v1.0.0-rc.9 removed the `vibe validate` command. `vibe build` validates
+          # and prints "validation ok".
           LLM_PROVIDER=fake vibe build --check
-          LLM_PROVIDER=fake vibe build
+          LLM_PROVIDER=fake vibe build 2>&1 | tee /tmp/vibe-build.log
+          grep -q 'validation ok' /tmp/vibe-build.log
           while IFS= read -r -d '' lock; do
             {
               printf '### %s\n\n```markdown\n' "$lock"
@@ -128,9 +145,18 @@ jobs:
               printf '\n```\n\n'
             } >> "$GITHUB_STEP_SUMMARY"
           done < <(git ls-files -z -o --ignored --exclude-standard -- '*.lock.md')
+
+  backend-build-scan:
+    name: Backend build, smoke test, and image scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Build keyless test image
         run: docker build -t sample-shop:ci backend
-      - name: Shop and counter API tests
+      - name: Shop API smoke test
         shell: bash
         run: |
           set -euo pipefail
@@ -139,43 +165,60 @@ jobs:
             result=$?
             if [ "$result" -ne 0 ]; then docker logs shop; fi
             docker rm -f shop >/dev/null 2>&1 || true
-            docker network rm counter-alt >/dev/null 2>&1 || true
             exit "$result"
           }
           trap cleanup EXIT
+          B=http://127.0.0.1:8080
           ready=false
           for attempt in $(seq 1 60); do
-            status=$(curl -s -o /tmp/shop-body -w '%{http_code}' http://127.0.0.1:8080/api/web/v1/shop || true)
-            if [ "$status" = 200 ] && jq -e '. == {"shop":"sample-shop","status":"open","currency":"HKD"}' /tmp/shop-body >/dev/null; then
+            status=$(curl -s -o /tmp/health-body -w '%{http_code}' "$B/health" || true)
+            if [ "$status" = 200 ]; then
               ready=true
               break
             fi
             sleep 1
           done
-          "$ready" || exit 1
+          "$ready" || { printf 'health not ready: %s\n' "$(cat /tmp/health-body 2>/dev/null || true)"; exit 1; }
           expect() {
-            local method=$1 url=$2 filter=$3 status
-            status=$(curl -sS -o /tmp/api-body -w '%{http_code}' -X "$method" "$url")
+            local method=$1 url=$2 want=$3 filter=$4
+            shift 4
+            local status
+            status=$(curl -sS -o /tmp/api-body -w '%{http_code}' -X "$method" "$@" "$url")
             printf '%s %s: %s %s\n' "$method" "$url" "$status" "$(cat /tmp/api-body)"
-            [ "$status" = 200 ]
+            [ "$status" = "$want" ]
             jq -e "$filter" /tmp/api-body >/dev/null
           }
-          B=http://127.0.0.1:8080
-          expect GET "$B/api/web/v1/shop" '. == {"shop":"sample-shop","status":"open","currency":"HKD"}'
-          expect GET "$B/api/web/v1/counter" '. == {"value":0}'
-          expect POST "$B/api/web/v1/increment-counter" '. == {"value":1}'
-          # The SDK runtime fixes public writes at 50 per client IP per day.
-          # The sequential POST used one; send the 50 concurrent POSTs from a second
-          # client address by attaching shop to a second Docker network and calling its address there.
-          docker network create counter-alt >/dev/null
-          docker network connect counter-alt shop
-          alt=$(docker inspect -f '{{(index .NetworkSettings.Networks "counter-alt").IPAddress}}' shop)
-          test -n "$alt"
-          seq 50 | xargs -P 50 -I{} curl -sS -o - -w '\n%{http_code}\n' -X POST "http://$alt:8080/api/web/v1/increment-counter" > /tmp/concurrent
-          awk '/^[0-9][0-9][0-9]$/ { n++; if ($0 != "200") bad++ } END { exit !(n == 50 && bad == 0) }' /tmp/concurrent
-          grep '^{' /tmp/concurrent | jq -s -e 'map(.value) | sort == [range(2;52)]' >/dev/null
-          printf '%s\n' 'concurrent: 50 x 200, values 2..51 unique'
-          expect GET "$B/api/web/v1/counter" '. == {"value":51}'
+          # Runtime route is /health ({"status":"ok"}). /healthz is not served.
+          expect GET "$B/health" 200 '.status == "ok"'
+          expect GET "$B/api/catalog/v1/products" 200 '.items | type == "array" and length > 0'
+          expect POST "$B/api/users/v1/login" 200 '.access_token | type == "string" and length > 0' \
+            -H 'Content-Type: application/json' \
+            -d '{"email":"alice@example.com","password":"password123"}'
+          token=$(jq -er '.access_token' /tmp/api-body)
+          expect GET "$B/api/users/v1/me" 200 '.email == "alice@example.com"' \
+            -H "Authorization: Bearer $token"
+          product=$(curl -sS "$B/api/catalog/v1/products" | jq -er '.items[0].id')
+          expect POST "$B/api/shop/v1/cart-items" 200 '(.items | type == "array" and length > 0) and (.subtotal_cents | type == "number")' \
+            -H "Authorization: Bearer $token" \
+            -H 'Content-Type: application/json' \
+            -d "$(jq -nc --arg id "$product" '{product_id:$id, quantity:1}')"
+          item=$(jq -er '.items[0].id' /tmp/api-body)
+          expect POST "$B/api/shop/v1/addresses" 201 '.id | type == "string" and length > 0' \
+            -H "Authorization: Bearer $token" \
+            -H 'Content-Type: application/json' \
+            -d '{"recipient":"Alice","phone":"91234567","region":"香港島","line1":"1 Home"}'
+          address=$(jq -er '.id' /tmp/api-body)
+          expect POST "$B/api/shop/v1/orders" 201 '.id | type == "string" and length > 0' \
+            -H "Authorization: Bearer $token" \
+            -H 'Content-Type: application/json' \
+            -H 'Idempotency-Key: smoke-order-1' \
+            -d "$(jq -nc --arg address "$address" --arg item "$item" '{address_id:$address, item_ids:[$item]}')"
+          order=$(jq -er '.id' /tmp/api-body)
+          expect POST "$B/api/shop/v1/orders/${order}/payments" 200 '.status == "paid"' \
+            -H "Authorization: Bearer $token" \
+            -H 'Content-Type: application/json' \
+            -H 'Idempotency-Key: smoke-pay-1' \
+            -d '{"method":"mock_card","simulate":"success"}'
       - name: Scan all image layers and configuration
         shell: bash
         run: |

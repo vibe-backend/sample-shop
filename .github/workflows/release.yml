@@ -38,7 +38,7 @@ jobs:
     # vibe-runtime version deployers use. Dependabot may bump it.
     # v1.0.0-rc.5 is the first SDK release with this reusable workflow.
     # The SDK workflow refuses private LLM hosts.
-    uses: vibe-backend/sdk/.github/workflows/vibe-project-release.yml@v1.0.0-rc.8
+    uses: vibe-backend/sdk/.github/workflows/vibe-project-release.yml@v1.0.0-rc.9
     with:
       environment: release
       project-path: backend
