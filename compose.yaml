@@ -1,0 +1,32 @@
+services:
+  runtime:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - VIBE_DB_PASSWORD
+      - VIBE_JWT_SECRET
+      - VIBE_LLM_API_KEY
+      - VIBE_LLM_BASE_URL
+      - VIBE_LLM_MODEL
+    healthcheck:
+      test:
+        - CMD
+        - /bin/bash
+        - -ec
+        - "exec 3<>/dev/tcp/127.0.0.1/8080; printf 'GET /healthz HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3; read -r protocol status rest <&3; [[ $$status == 200 ]]"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "${FRONTEND_PORT:-3000}:8080"
+    depends_on:
+      runtime:
+        condition: service_healthy

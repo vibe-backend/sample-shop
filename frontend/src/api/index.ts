@@ -14,7 +14,7 @@ export const SHOP_SLUG: string = import.meta.env.VITE_SHOP_SLUG || 'main';
 const mock = API_MODE === 'mock' ? createMockApi({ latency: [150, 450], persist: true }) : null;
 
 export const api: ShopApi =
-  mock ?? createRealApi(import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080', SHOP_SLUG);
+  mock ?? createRealApi(import.meta.env.VITE_API_BASE_URL || '/api', SHOP_SLUG);
 
 /** Mock mode only: wipe local demo data. */
 export const resetMockData = mock ? () => mock.reset() : null;

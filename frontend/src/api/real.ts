@@ -24,9 +24,11 @@ export function setRetrySleep(fn: (ms: number) => Promise<void>) {
   sleep = fn;
 }
 
-/** Fetch adapter implemented against the contract. Not exercised yet (no backend). */
-export function createRealApi(baseUrl: string, slug: string): ShopApi {
-  const base = baseUrl.replace(/\/$/, '');
+/** Fetch adapter for the single-tenant SDK routes. */
+export function createRealApi(baseUrl = '', _slug?: string): ShopApi {
+  // Retained for callers using the former tenant argument.
+  void _slug;
+  const base = baseUrl.replace(/\/+$/, '').replace(/\/api$/, '');
 
   async function req<T>(
     method: string,
@@ -88,7 +90,7 @@ export function createRealApi(baseUrl: string, slug: string): ShopApi {
     }
   }
 
-  const cat = `/catalog/v1/${encodeURIComponent(slug)}/products`;
+  const cat = `/api/catalog/v1/products`;
 
   const unsupported = () =>
     Promise.reject(new ApiRequestError(501, 'FEATURE_NOT_AVAILABLE', '此功能目前只支援示範模式；正式後端合約尚未實作'));
@@ -119,7 +121,7 @@ export function createRealApi(baseUrl: string, slug: string): ShopApi {
     listVariants: (pid) =>
       req<ProductVariant[]>(
         'GET',
-        `/catalog/v1/${encodeURIComponent(slug)}/staff/products/${encodeURIComponent(pid)}/variants`,
+        `/api/catalog/v1/staff/products/${encodeURIComponent(pid)}/variants`,
       ),
     createVariant: (pid, input) => req<ProductVariant>('POST', `${cat}/${encodeURIComponent(pid)}/variants`, input),
     updateVariant: (pid, sid, input, version) =>
@@ -129,9 +131,9 @@ export function createRealApi(baseUrl: string, slug: string): ShopApi {
   };
   return {
     ...features,
-    login: (c) => req<AuthToken>('POST', `/users/v1/${encodeURIComponent(slug)}/login`, c),
-    register: (r) => req<AuthToken>('POST', `/users/v1/${encodeURIComponent(slug)}/register`, r),
-    me: () => req<Me>('GET', '/users/v1/me'),
+    login: (c) => req<AuthToken>('POST', `/api/users/v1/login`, c),
+    register: (r) => req<AuthToken>('POST', `/api/users/v1/register`, r),
+    me: () => req<Me>('GET', '/api/users/v1/me'),
     listProducts: (q = {}) => {
       const { sort, ...rest } = q;
       return req<Page<Product>>(
@@ -149,7 +151,7 @@ export function createRealApi(baseUrl: string, slug: string): ShopApi {
       const { sort, ...rest } = q;
       return req<Page<Product>>(
         'GET',
-        `/catalog/v1/${encodeURIComponent(slug)}/staff/products` +
+        `/api/catalog/v1/staff/products` +
           qs({
             ...rest,
             brands: rest.brands?.join(','),
@@ -160,39 +162,39 @@ export function createRealApi(baseUrl: string, slug: string): ShopApi {
     },
     getProduct: (id) => req<Product>('GET', `${cat}/${encodeURIComponent(id)}`),
     getStaffProduct: (id) =>
-      req<Product>('GET', `/catalog/v1/${encodeURIComponent(slug)}/staff/products/${encodeURIComponent(id)}`),
-    getCart: () => req<Cart>('GET', '/shop/v1/cart-items'),
+      req<Product>('GET', `/api/catalog/v1/staff/products/${encodeURIComponent(id)}`),
+    getCart: () => req<Cart>('GET', '/api/shop/v1/cart-items'),
     addCartItem: (product_id, quantity, sku_id) =>
-      req<Cart>('POST', '/shop/v1/cart-items', sku_id ? { product_id, sku_id, quantity } : { product_id, quantity }),
-    updateCartItem: (id, quantity) => req<Cart>('PUT', `/shop/v1/cart-items/${encodeURIComponent(id)}`, { quantity }),
-    removeCartItem: (id) => req<Cart>('DELETE', `/shop/v1/cart-items/${encodeURIComponent(id)}`),
+      req<Cart>('POST', '/api/shop/v1/cart-items', sku_id ? { product_id, sku_id, quantity } : { product_id, quantity }),
+    updateCartItem: (id, quantity) => req<Cart>('PUT', `/api/shop/v1/cart-items/${encodeURIComponent(id)}`, { quantity }),
+    removeCartItem: (id) => req<Cart>('DELETE', `/api/shop/v1/cart-items/${encodeURIComponent(id)}`),
     // CONTRACT.md §10 @a3d4304 (backend/markdown-v1): Idempotency-Key is required; on 503 TX_CONFLICT or a
     // network error, wait Retry-After (default 1s) and retry with the SAME key, at most twice.
     createOrder: (key, body) =>
-      withRetry(() => req<Order>('POST', '/shop/v1/orders', body, { 'Idempotency-Key': key })),
+      withRetry(() => req<Order>('POST', '/api/shop/v1/orders', body, { 'Idempotency-Key': key })),
     listOrders: (cursor, query = {}) =>
-      query.status || query.needs_review ? unsupported() : req<Page<Order>>('GET', '/shop/v1/orders' + qs({ cursor })),
-    getOrder: (id) => req<Order>('GET', `/shop/v1/orders/${encodeURIComponent(id)}`),
+      query.status || query.needs_review ? unsupported() : req<Page<Order>>('GET', '/api/shop/v1/orders' + qs({ cursor })),
+    getOrder: (id) => req<Order>('GET', `/api/shop/v1/orders/${encodeURIComponent(id)}`),
     // §13 @a3d4304
     // Same TX_CONFLICT / network retry rule as orders (§13 lists 503/504), always with the same key.
     payOrder: (id, p, key) =>
       withRetry(() =>
-        req<Order>('POST', `/shop/v1/orders/${encodeURIComponent(id)}/payments`, p, { 'Idempotency-Key': key }),
+        req<Order>('POST', `/api/shop/v1/orders/${encodeURIComponent(id)}/payments`, p, { 'Idempotency-Key': key }),
       ),
     cancelOrder: (id, reason) =>
-      req<Order>('POST', `/shop/v1/orders/${encodeURIComponent(id)}/cancel`, reason ? { reason } : {}),
-    confirmDelivery: (id) => req<Order>('POST', `/shop/v1/orders/${encodeURIComponent(id)}/confirm-delivery`, {}),
+      req<Order>('POST', `/api/shop/v1/orders/${encodeURIComponent(id)}/cancel`, reason ? { reason } : {}),
+    confirmDelivery: (id) => req<Order>('POST', `/api/shop/v1/orders/${encodeURIComponent(id)}/confirm-delivery`, {}),
     listStaffOrders: (q: { status?: OrderStatus; cursor?: string } = {}) =>
-      req<Page<StaffOrder>>('GET', '/shop/v1/staff/orders' + qs(q)),
+      req<Page<StaffOrder>>('GET', '/api/shop/v1/staff/orders' + qs(q)),
     updateStaffOrderStatus: (id, status) =>
-      req<StaffOrder>('PUT', `/shop/v1/staff/orders/${encodeURIComponent(id)}/status`, { status }),
+      req<StaffOrder>('POST', `/api/shop/v1/staff/orders/${encodeURIComponent(id)}/status`, { status }),
     // §2 #17/#18, §12 @a3d4304
-    listAddresses: () => req<Address[]>('GET', '/shop/v1/addresses'),
-    createAddress: (a) => req<Address>('POST', '/shop/v1/addresses', a),
+    listAddresses: () => req<Address[]>('GET', '/api/shop/v1/addresses'),
+    createAddress: (a) => req<Address>('POST', '/api/shop/v1/addresses', a),
     // §12 @a3d4304 lists these as planned (#44); routes follow it, unverified against a backend.
-    updateAddress: (id, a) => req<Address>('PUT', `/shop/v1/addresses/${encodeURIComponent(id)}`, a),
-    deleteAddress: (id) => req<void>('DELETE', `/shop/v1/addresses/${encodeURIComponent(id)}`),
-    setDefaultAddress: (id) => req<Address>('POST', `/shop/v1/addresses/${encodeURIComponent(id)}/default`, {}),
+    updateAddress: (id, a) => req<Address>('PUT', `/api/shop/v1/addresses/${encodeURIComponent(id)}`, a),
+    deleteAddress: (id) => req<void>('DELETE', `/api/shop/v1/addresses/${encodeURIComponent(id)}`),
+    setDefaultAddress: (id) => req<Address>('POST', `/api/shop/v1/addresses/${encodeURIComponent(id)}/default`, {}),
     createProduct: (p: ProductInput) => req<Product>('POST', cat, p),
     updateProduct: (id, p, etag) => {
       if (!etag)
