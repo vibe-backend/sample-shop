@@ -65,7 +65,7 @@ describe('real adapter payOrder (#30)', () => {
       createRealApi('http://x', 'main').payOrder('ord_1', { method: 'mock_card', simulate: 'failure' }, 'pk'),
     ).rejects.toMatchObject({ status: 402, code: 'PAYMENT_DECLINED' });
     const [url, init] = fetch.mock.calls[0];
-    expect(url).toBe('http://x/shop/v1/orders/ord_1/payments');
+    expect(url).toBe('http://x/api/shop/v1/orders/ord_1/payments');
     expect(init.method).toBe('POST');
     expect(init.headers['Idempotency-Key']).toBe('pk');
     expect(JSON.parse(init.body)).toEqual({ method: 'mock_card', simulate: 'failure' });
@@ -102,8 +102,8 @@ describe('real adapter payOrder — CONTRACT.md §13 @a3d4304', () => {
   });
 });
 
-describe('real adapter order status endpoints (#34, proposed — not yet in CONTRACT.md)', () => {
-  it('uses the proposed routes and methods', async () => {
+describe('real adapter single-tenant order status endpoints', () => {
+  it('uses the SDK routes and methods', async () => {
     const fetch = vi.fn().mockImplementation(async () => json(200, { ...order, status: 'cancelled' }));
     vi.stubGlobal('fetch', fetch);
     const r = createRealApi('http://x', 'main');
@@ -113,10 +113,10 @@ describe('real adapter order status endpoints (#34, proposed — not yet in CONT
     fetch.mockImplementation(async () => json(200, { items: [], next_cursor: null }));
     await r.listStaffOrders({ status: 'paid' });
     expect(fetch.mock.calls.map(([u, i]) => `${i.method} ${String(u).replace('http://x', '')}`)).toEqual([
-      'POST /shop/v1/orders/ord_1/cancel',
-      'POST /shop/v1/orders/ord_1/confirm-delivery',
-      'PUT /shop/v1/staff/orders/ord_1/status',
-      'GET /shop/v1/staff/orders?status=paid',
+      'POST /api/shop/v1/orders/ord_1/cancel',
+      'POST /api/shop/v1/orders/ord_1/confirm-delivery',
+      'POST /api/shop/v1/staff/orders/ord_1/status',
+      'GET /api/shop/v1/staff/orders?status=paid',
     ]);
     expect(JSON.parse(fetch.mock.calls[2][1].body)).toEqual({ status: 'shipped' });
   });
@@ -136,9 +136,9 @@ describe('real adapter address book (#44, §12 @a3d4304 planned routes, unverifi
     await expect(r.deleteAddress('a1')).resolves.toBeUndefined();
     await r.setDefaultAddress('a1');
     expect(fetch.mock.calls.map(([u, i]) => `${i.method} ${String(u).replace('http://x', '')}`)).toEqual([
-      'PUT /shop/v1/addresses/a1',
-      'DELETE /shop/v1/addresses/a1',
-      'POST /shop/v1/addresses/a1/default',
+      'PUT /api/shop/v1/addresses/a1',
+      'DELETE /api/shop/v1/addresses/a1',
+      'POST /api/shop/v1/addresses/a1/default',
     ]);
     expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual(input);
   });
@@ -152,7 +152,7 @@ describe('staff product and SKU contract integration', () => {
     const p = await r.getStaffProduct('p/1');
     expect(p.etag).toBe('"7"');
     await r.updateProduct(p.id, { active: true }, p.etag);
-    expect(fetch.mock.calls[0][0]).toBe('http://x/catalog/v1/my%20shop/staff/products/p%2F1');
+    expect(fetch.mock.calls[0][0]).toBe('http://x/api/catalog/v1/staff/products/p%2F1');
     expect(fetch.mock.calls[1][1].headers['If-Match']).toBe('"7"');
     await expect(r.updateProduct(p.id, { active: false })).rejects.toMatchObject({ status: 428 });
     expect(fetch).toHaveBeenCalledTimes(2);
@@ -165,10 +165,61 @@ describe('staff product and SKU contract integration', () => {
     await r.createVariant('p/1', { options: { color: 'red' }, price_cents: 100, stock: 2, active: true });
     await r.updateVariant('p/1', 'sku/1', { active: false }, 9);
     expect(fetch.mock.calls.map(([u, i]) => `${i.method} ${u}`)).toEqual([
-      'GET http://x/catalog/v1/main/staff/products/p%2F1/variants',
-      'POST http://x/catalog/v1/main/products/p%2F1/variants',
-      'PUT http://x/catalog/v1/main/products/p%2F1/variants/sku%2F1',
+      'GET http://x/api/catalog/v1/staff/products/p%2F1/variants',
+      'POST http://x/api/catalog/v1/products/p%2F1/variants',
+      'PUT http://x/api/catalog/v1/products/p%2F1/variants/sku%2F1',
     ]);
     expect(fetch.mock.calls[2][1].headers['If-Match']).toBe('"9"');
+  });
+});
+
+describe('single-tenant API routes', () => {
+  it.each([
+    ['http://localhost:8080', 'http://localhost:8080'],
+    ['http://localhost:8080/', 'http://localhost:8080'],
+    ['http://localhost:8080///', 'http://localhost:8080'],
+    ['http://localhost:8080/api', 'http://localhost:8080'],
+    ['http://localhost:8080/api/', 'http://localhost:8080'],
+    ['/api', ''], ['/api/', ''], ['', ''], [undefined, ''],
+  ])('normalizes base URL %s', async (baseUrl, origin) => {
+    const fetch = vi.fn().mockImplementation(async () => json(200, {}));
+    vi.stubGlobal('fetch', fetch);
+    const api = createRealApi(baseUrl);
+    await api.me();
+    await api.listProducts();
+    await api.getCart();
+    expect(fetch.mock.calls.map(([url]) => url)).toEqual([
+      `${origin}/api/users/v1/me`,
+      `${origin}/api/catalog/v1/products`,
+      `${origin}/api/shop/v1/cart-items`,
+    ]);
+  });
+
+  it('uses single-tenant auth, product, address and order routes with an ignored legacy slug', async () => {
+    const fetch = vi.fn().mockImplementation(async () => json(200, {}));
+    vi.stubGlobal('fetch', fetch);
+    const api = createRealApi('/api', 'legacy shop');
+    await api.login({ email: 'a@b.c', password: 'password' });
+    await api.register({ email: 'a@b.c', password: 'password', display_name: 'A' });
+    await api.listStaffProducts();
+    await api.getProduct('p/1');
+    await api.deleteProduct('p/1');
+    await api.listAddresses();
+    await api.createAddress({ recipient: 'A', phone: '12345678', region: 'HK', line1: 'Street' });
+    await api.createOrder('key', { address_id: 'a1' });
+    await api.listOrders();
+    await api.getOrder('ord/1');
+    expect(fetch.mock.calls.map(([url, init]) => `${init.method} ${url}`)).toEqual([
+      'POST /api/users/v1/login',
+      'POST /api/users/v1/register',
+      'GET /api/catalog/v1/staff/products',
+      'GET /api/catalog/v1/products/p%2F1',
+      'DELETE /api/catalog/v1/products/p%2F1',
+      'GET /api/shop/v1/addresses',
+      'POST /api/shop/v1/addresses',
+      'POST /api/shop/v1/orders',
+      'GET /api/shop/v1/orders',
+      'GET /api/shop/v1/orders/ord%2F1',
+    ]);
   });
 });

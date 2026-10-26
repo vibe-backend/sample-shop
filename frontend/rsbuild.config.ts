@@ -20,6 +20,7 @@ export default defineConfig(({ command, envMode }) => {
 
   return {
     plugins: [pluginReact()],
+    server: { proxy: { '/api': 'http://127.0.0.1:8080' } },
     html: { template: './index.html' },
     source: { entry: { index: './src/main.tsx' }, define },
     resolve: { alias: { '@': path.resolve(import.meta.dirname, './src') } },

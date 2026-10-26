@@ -67,7 +67,7 @@ describe('real adapter', () => {
     tokenStore.set({ access_token: 'abc', expires_at: '2999-01-01T00:00:00Z' });
     await createRealApi('https://api.example', 'main').me();
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    expect(url).toBe('https://api.example/users/v1/me');
+    expect(url).toBe('https://api.example/api/users/v1/me');
     expect((init.headers as Record<string, string>).Authorization).toBe('Bearer abc');
   });
 });
