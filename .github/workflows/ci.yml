@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+env:
+  VIBE_VERSION: v1.0.0-rc.9
+  VIBE_SHA256SUMS_SHA256: 21666579993f372880d1da5d8ef6bbdfca3f55a8b1cc8af8e6d0b89eea1c1afb
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -109,14 +113,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Build with fake provider and validate
+      - name: Build with fake provider
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          curl -fsSL https://raw.githubusercontent.com/vibe-backend/sdk/v1.0.0-rc.9/scripts/vibe-install.sh -o vibe-install.sh
-          sh vibe-install.sh install --version v1.0.0-rc.9
+          curl -fsSL --proto '=https' --tlsv1.2 "https://github.com/vibe-backend/sdk/releases/download/${VIBE_VERSION}/SHA256SUMS" -o SHA256SUMS
+          printf '%s  SHA256SUMS\n' "$VIBE_SHA256SUMS_SHA256" | sha256sum -c -
+          curl -fsSL "https://raw.githubusercontent.com/vibe-backend/sdk/${VIBE_VERSION}/scripts/vibe-install.sh" -o vibe-install.sh
+          sh vibe-install.sh install --version "$VIBE_VERSION"
           export PATH="$HOME/.local/bin:$PATH"
           cd backend
           scaffolding=$(find . \( -name '_project.md' -o -name '_definition.md' -o -name '_version.md' \))
@@ -133,8 +139,6 @@ jobs:
           if git ls-files | grep -E '(^|/)([^/]*\.lock\.md|vibe\.lock|manifest\.json)$'; then
             exit 1
           fi
-          # v1.0.0-rc.9 removed the `vibe validate` command. `vibe build` validates
-          # and prints "validation ok".
           LLM_PROVIDER=fake vibe build --check
           LLM_PROVIDER=fake vibe build 2>&1 | tee /tmp/vibe-build.log
           grep -q 'validation ok' /tmp/vibe-build.log
@@ -155,7 +159,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Build keyless test image
-        run: docker build -t sample-shop:ci backend
+        run: docker build --build-arg VIBE_VERSION --build-arg VIBE_SHA256SUMS_SHA256 -t sample-shop:ci backend
       - name: Shop API smoke test
         shell: bash
         run: |
