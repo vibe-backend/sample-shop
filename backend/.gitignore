@@ -4,8 +4,9 @@
 *.lock.md
 # Optional local LLM recordings (VIBE_LLM_RECORD). Do not commit.
 fixtures/llm/
-# Signing keys, public keys, build record, cache.
-.vibe/
+# Signing keys, public keys, build record, cache. Keep the dev slug file.
+.vibe/*
+!.vibe/slugs.json
 signing.key
 *.key
 manifest.json
